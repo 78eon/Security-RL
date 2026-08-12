@@ -1,0 +1,33 @@
+# Secrets — NVD API key lives here, never committed
+.env
+
+# Trained attack-policy weights are gated by default (charter §10, dual-use)
+runs/
+*.zip
+*.pt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# SQLite transient files (the catalogue itself IS committed)
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# OS
+.directory
+.DS_Store

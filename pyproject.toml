@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rlredteam"
+version = "0.1.0"
+description = "Simulation-only RL red-team agent: PPO on NaSim with a CVE/CVSS-weighted reward"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+
+# Pinned exactly — reproducibility is a graded criterion (charter §7).
+dependencies = [
+    "nasim==0.12.0",
+    "gymnasium==1.0.0",
+    "stable-baselines3==2.9.0",
+    # SB3 2.9.0 requires torch>=2.8. CPU wheel is selected in the Dockerfile
+    # via the PyTorch CPU index — the full CUDA wheel is ~2.5GB and unusable
+    # on the 16GB/no-GPU compute budget (charter R2).
+    "torch==2.8.0",
+    "numpy==2.1.3",
+    "pyyaml==6.0.2",
+    "psycopg[binary]==3.2.3",
+    "pandas==2.2.3",
+    "scipy==1.14.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "ruff==0.8.4",
+    # Test-only: recomputes CVSS base scores from their vector strings so the
+    # committed catalogue can be cross-checked. Never in the training image.
+    "cvss==3.3",
+    # Test-only: used by tools/fetch_nvd.py (one-shot, online).
+    "requests==2.32.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs nasim installed",
+    "postgres: needs a live PostgreSQL (docker compose up -d postgres)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

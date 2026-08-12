@@ -1,0 +1,46 @@
+.PHONY: help build test test-local lint db-up db-down rollout catalogue manifest verify-nvd clean
+
+export UID := $(shell id -u)
+export GID := $(shell id -g)
+
+# This machine runs podman; CI or another machine may have docker. Auto-detect
+# rather than hardcode, so `make test` works either way.
+COMPOSE := $(shell command -v docker >/dev/null 2>&1 && echo "docker compose" || echo "podman compose")
+
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+build:          ## Build the training image
+	$(COMPOSE) build
+
+db-up:          ## Start PostgreSQL (Module 4)
+	$(COMPOSE) up -d postgres
+
+db-down:        ## Stop PostgreSQL
+	$(COMPOSE) down
+
+test:           ## Full test suite in Docker, with PostgreSQL up
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app pytest -q
+
+test-local:     ## Test suite on the host venv (skips postgres-marked tests)
+	pytest -q -m "not postgres"
+
+lint:           ## Ruff
+	$(COMPOSE) run --rm app ruff check src tests tools scripts
+
+catalogue:      ## Rebuild the frozen SQLite CVE catalogue from data/provenance/
+	$(COMPOSE) run --rm app python -m rlredteam.catalogue build
+
+manifest:       ## Recompute and print the SHA-256 catalogue manifest
+	$(COMPOSE) run --rm app python -m rlredteam.manifest
+
+verify-nvd:     ## ONE-SHOT, ONLINE: diff the committed catalogue against live NVD
+	python tools/fetch_nvd.py --verify
+
+rollout:        ## Deterministic random-policy rollout on the frozen topology
+	$(COMPOSE) run --rm app python scripts/rollout_random.py --seed 42
+
+clean:
+	find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .pytest_cache .ruff_cache

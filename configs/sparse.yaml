@@ -1,0 +1,22 @@
+# SPARSE baseline arm of the ablation.
+# Identical to configs/shaped.yaml except reward.mode. The agent is told only
+# whether it reached a crown jewel -- no severity signal, no tactic shaping.
+reward:
+  mode: sparse
+  sparse_goal_reward: 1.0
+
+  # Retained so both arms load the same config shape; unused in sparse mode.
+  cve_scale: 2.5
+  tactic_bonuses:
+    recon: 1.0
+    exploit: 0.5
+    privesc: 2.0
+    exfil: 1.5
+  crown_jewel: 100.0
+  failed_action: -5.0
+  first_success_only: true
+  weight:
+    mode: power
+    gamma: 2.0
+    w_min: 0.25
+    w_max: 1.0

@@ -1,0 +1,34 @@
+# SHAPED arm of the ablation.
+# Differs from configs/sparse.yaml ONLY in reward.mode -- topology, seeds and
+# CVE catalogue are identical, so the ablation isolates the reward.
+reward:
+  mode: shaped
+
+  # Coefficient on the normalised CVSS weight ("CVE/CVSS x weight").
+  # Bounded above by the goal-dominance guard: on an 8-host topology with two
+  # crown jewels, 2.5 is the largest round value for which shaping cannot
+  # out-earn reaching the goal. See RewardEngine.assert_goal_dominance.
+  cve_scale: 2.5
+
+  # Locked tactic bonuses.
+  # NOTE: `exfil` is unreachable -- NASim has no exfiltration action. Retained
+  # so its zero occurrence count is visible, pending supervisor decision.
+  tactic_bonuses:
+    recon: 1.0
+    exploit: 0.5
+    privesc: 2.0
+    exfil: 1.5
+
+  crown_jewel: 100.0
+  failed_action: -5.0
+  first_success_only: true
+
+  weight:
+    mode: power
+    # Severity emphasis, chosen a priori from the catalogue's score
+    # distribution (never tuned on results). Yields 2.84x contrast across the
+    # committed 16-CVE pool; a linear map gives only ~1.5x, which sits below
+    # PPO's seed-to-seed noise at n=10.
+    gamma: 2.0
+    w_min: 0.25
+    w_max: 1.0

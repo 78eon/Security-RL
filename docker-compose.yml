@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rlredteam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rlredteam}
+      POSTGRES_DB: ${POSTGRES_DB:-rlredteam}
+    ports:
+      # 5433 on the host to avoid clashing with a local 5432.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/rlredteam/storage/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rlredteam}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-rlredteam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rlredteam}
+      POSTGRES_DB: ${POSTGRES_DB:-rlredteam}
+      PYTHONHASHSEED: "0"
+    volumes:
+      # Bind-mounted so artefacts survive the container and stay host-owned.
+      # runs/ is gitignored — trained weights are gated by default (charter §10).
+      - ./runs:/app/runs
+    # Keeps bind-mounted artefacts owned by the host user rather than root.
+    user: "${UID:-1000}:${GID:-1000}"
+
+volumes:
+  pgdata:

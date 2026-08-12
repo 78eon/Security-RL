@@ -1,0 +1,6 @@
+{
+  "algorithm": "sha256(canonical_json_rows)",
+  "generated_at": "2026-08-12T12:37:21Z",
+  "row_count": 16,
+  "sha256": "c14575707519311e90a571e1b27d0bed16b2d10e41757f60a135ab8756137205"
+}
