@@ -32,6 +32,7 @@ behind it. Written to be readable without opening the code.
 | `docs/EVAL_SPEC.md` | Pre-registered n=10 evaluation protocol and results template |
 | `docs/FLOWCHART_SPEC.md` | Drawing spec for the baseline diagram |
 | `docs/report_snippets.md` | Draft text for the dissertation |
+| `docs/FRONTEND_PLAN.md` | PySide6 desktop app architecture and build order |
 
 ## Quick start
 
