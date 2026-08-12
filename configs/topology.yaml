@@ -1,0 +1,37 @@
+# Frozen topology generation parameters.
+#
+# Shared by BOTH ablation arms. Combined with a topology seed these pin the
+# exact network; configs/*.yaml supply the reward, and only the reward differs
+# between arms. The config_hash of this file is logged with every experiment.
+topology:
+  num_hosts: 8
+  num_services: 5
+  num_os: 2
+  num_processes: 3
+
+  # Deliberately more exploits than services. With one exploit per service most
+  # hosts admit exactly one applicable exploit, the agent never chooses between
+  # severities, and the CVE weighting degenerates into a constant that cannot
+  # steer the policy. At 8/5 about 90% of hosts offer a genuine choice
+  # (measured across seeds 42-51).
+  num_exploits: 8
+  num_privescs: 3
+
+  # Matches the locked crown-jewel reward of +100.
+  r_sensitive: 100.0
+  r_user: 100.0
+
+  exploit_cost: 3
+  privesc_cost: 2
+  service_scan_cost: 1
+  os_scan_cost: 1
+  subnet_scan_cost: 1
+  process_scan_cost: 1
+
+  # Varied success probabilities so exploits differ in cost/benefit, not just
+  # in severity.
+  exploit_probs: mixed
+  privesc_probs: mixed
+
+  restrictiveness: 5
+  step_limit: 1000

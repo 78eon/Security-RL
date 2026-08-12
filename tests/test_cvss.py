@@ -88,7 +88,10 @@ def test_linear_mode_is_gamma_one() -> None:
 def test_band_mode_collapses_within_band() -> None:
     # Documents exactly why BAND is not the default: it discards the
     # within-band variance the ablation depends on.
-    params = WeightParams(mode=WeightMode.BAND, band_weights={s: i / 4 for i, s in enumerate(Severity)})
+    params = WeightParams(
+        mode=WeightMode.BAND,
+        band_weights={s: i / 4 for i, s in enumerate(Severity)},
+    )
     assert severity_weight(7.0, params) == severity_weight(8.9, params)
 
 
