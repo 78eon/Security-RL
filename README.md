@@ -17,7 +17,7 @@ production or third-party network is used, and no human subjects are involved.
 | PPO training loop (`src/rlredteam/train.py`) | done, trains and logs |
 | Evaluation n=10 | spec written (`docs/EVAL_SPEC.md`), awaiting runs |
 
-156 tests passing, ruff clean.
+173 tests passing (fast suite plus 17 slow training tests), ruff clean.
 
 ## Documentation
 

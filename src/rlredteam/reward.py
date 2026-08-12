@@ -13,6 +13,8 @@ gymnasium or torch -- so it is fully unit-testable without an environment.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -121,6 +123,32 @@ class RewardConfig:
     # already-compromised host can be re-exploited, so paying on every success
     # makes farming optimal. See RewardEngine._is_payable.
     first_success_only: bool = True
+
+    def hash(self) -> str:
+        """Stable digest of the reward settings themselves.
+
+        Hashes the resolved values rather than the YAML file, so two configs
+        that differ only in comments or key order hash the same, and a config
+        built in code hashes the same as the file that would produce it. This
+        is what gets logged with every experiment.
+        """
+        payload = {
+            "mode": str(self.mode),
+            "cve_scale": self.cve_scale,
+            "tactic_bonuses": dict(sorted(self.tactic_bonuses.items())),
+            "crown_jewel": self.crown_jewel,
+            "failed_action": self.failed_action,
+            "sparse_goal_reward": self.sparse_goal_reward,
+            "first_success_only": self.first_success_only,
+            "weight": {
+                "mode": str(self.weight.mode),
+                "gamma": self.weight.gamma,
+                "w_min": self.weight.w_min,
+                "w_max": self.weight.w_max,
+            },
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
     @classmethod
     def from_yaml(cls, path: Path) -> RewardConfig:

@@ -290,7 +290,7 @@ def train(args: argparse.Namespace) -> dict:
         "timesteps": args.timesteps,
         "reward_mode": str(reward_config.mode),
         "reward_config_path": str(args.reward_config),
-        "reward_config_hash": config_digest(args.reward_config),
+        "reward_config_hash": reward_config.hash(),
         "topology_config_hash": topology_config.config_hash(),
         "cve_manifest_sha256": digest(catalogue),
         "topology": summary,

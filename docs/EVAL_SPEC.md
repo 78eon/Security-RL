@@ -20,6 +20,30 @@ varying only the training seed measures *training variance on one network*. Vary
 measures *generalisation across networks*, which is the project's stated goal. They
 answer different questions; `--vary-topology` selects the second.
 
+## Evaluation policy: stochastic, not greedy
+
+**Policies are evaluated by sampling from the action distribution, not by taking the
+argmax.** This is a methodological decision with a measured justification, and it must be
+stated in the write-up.
+
+NASim is partially observable, and a failed action leaves the observation essentially
+unchanged. A memoryless greedy policy therefore re-selects the same argmax action, the
+observation again does not change, and the episode loops until the step limit. Measured on
+a 6,000-step policy (seed 42):
+
+| Action selection | Distinct actions | Goals reached | Mean episode length |
+|---|---:|---:|---:|
+| Deterministic (argmax) | 2 | 0 / 5 | 1000 (always truncated) |
+| Stochastic (sampled) | 120 | 5 / 5 | 391 |
+
+The same weights are useless greedily and effective when sampled. That stochastic policies
+can be strictly better than deterministic ones in partially observable settings is an
+established result (Singh, Jaakkola & Jordan, 1994) — this is not a workaround, it is the
+correct choice for a POMDP with a memoryless policy.
+
+`test_deterministic_evaluation_collapses` asserts this remains true, so the justification
+cannot silently become obsolete.
+
 ## Metrics
 
 All are in native NASim units or scale-free. **Every arm is evaluated under
@@ -113,3 +137,7 @@ All four are columns in the `experiments` and `episodes` tables already.
    service correspondence. The severities are real and sourced from NVD; the pairing to
    a specific generated service is not.
 4. **n=10 is underpowered** for anything but large effects — see above.
+5. **Greedy policies collapse on this environment.** Results are reported for stochastic
+   action selection; a deterministic policy reaches the goal 0/5 times. This is a property
+   of pairing a memoryless policy with a partially observable environment, and is stated
+   rather than hidden.

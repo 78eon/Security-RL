@@ -35,6 +35,8 @@ dev = [
     "cvss==3.3",
     # Test-only: used by tools/fetch_nvd.py (one-shot, online).
     "requests==2.32.3",
+    # Test-only: memory reporting in the throughput test.
+    "psutil==6.1.0",
 ]
 
 [tool.setuptools.packages.find]

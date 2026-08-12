@@ -200,3 +200,72 @@ def test_steps_cascade_delete_with_experiment(conninfo: str) -> None:
             """
         ).fetchone()[0]
     assert orphans == 0
+
+
+# -- 2. end-to-end logger integrity from a real training run ---------------
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_training_run_writes_consistent_rows(conninfo: str) -> None:
+    """A real PPO run must land in all three tables with intact relationships.
+
+    The synthetic tests above prove the logger works; this proves it is
+    actually wired into training and that the counts agree with what the run
+    reported, rather than silently dropping episodes.
+    """
+    pytest.importorskip("nasim")
+    pytest.importorskip("stable_baselines3")
+
+    from pathlib import Path
+
+    import rlredteam.train as train_module
+    from rlredteam.catalogue import CVECatalogue
+    from rlredteam.manifest import digest
+    from rlredteam.reward import RewardConfig
+    from rlredteam.topology import TopologyConfig
+
+    configs = Path(__file__).resolve().parents[1] / "configs"
+    args = train_module.parse_args(
+        ["--seed", "42", "--timesteps", "2048",
+         "--reward-config", str(configs / "shaped.yaml"),
+         "--postgres", "--log-steps"]
+    )
+    report = train_module.train(args)
+    reported = report["episodes"]
+
+    with psycopg.connect(conninfo) as conn:
+        experiment = conn.execute(
+            "SELECT id, config_hash, topology_config_hash, cve_manifest_sha256 "
+            "FROM experiments ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        experiment_id = experiment[0]
+
+        episodes = conn.execute(
+            "SELECT count(*) FROM episodes WHERE experiment_id = %s", (experiment_id,)
+        ).fetchone()[0]
+        steps = conn.execute(
+            "SELECT count(*) FROM steps s JOIN episodes e ON e.id = s.episode_id "
+            "WHERE e.experiment_id = %s", (experiment_id,)
+        ).fetchone()[0]
+        step_sum = conn.execute(
+            "SELECT coalesce(sum(length),0) FROM episodes WHERE experiment_id = %s",
+            (experiment_id,),
+        ).fetchone()[0]
+        orphans = conn.execute(
+            "SELECT count(*) FROM steps s LEFT JOIN episodes e ON e.id = s.episode_id "
+            "WHERE e.id IS NULL"
+        ).fetchone()[0]
+
+    try:
+        assert episodes == reported, "episodes in DB disagree with the run's own count"
+        assert steps == step_sum, "step rows disagree with the episode lengths"
+        assert orphans == 0, "steps exist with no parent episode"
+        # Test 14, checked at the storage layer as well as the snapshot file.
+        assert experiment[1] == RewardConfig.from_yaml(configs / "shaped.yaml").hash()
+        assert experiment[2] == TopologyConfig.from_yaml().config_hash()
+        assert experiment[3] == digest(CVECatalogue.open_default())
+    finally:
+        with psycopg.connect(conninfo) as conn:
+            conn.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))
+            conn.commit()
