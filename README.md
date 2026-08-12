@@ -33,6 +33,7 @@ behind it. Written to be readable without opening the code.
 | `docs/FLOWCHART_SPEC.md` | Drawing spec for the baseline diagram |
 | `docs/report_snippets.md` | Draft text for the dissertation |
 | `docs/FRONTEND_PLAN.md` | PySide6 desktop app architecture and build order |
+| `docs/UI_DESIGN_BRIEF.md` | Self-contained brief for producing the UI/UX design |
 
 ## Quick start
 
