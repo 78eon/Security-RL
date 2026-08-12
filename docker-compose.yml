@@ -29,12 +29,24 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rlredteam}
       POSTGRES_DB: ${POSTGRES_DB:-rlredteam}
       PYTHONHASHSEED: "0"
+    # No `user:` directive. Under rootless podman the host user is already
+    # mapped to container root, so pinning user: 1000:1000 selects a DIFFERENT
+    # identity that cannot write the bind-mounted runs/ directory. Under
+    # rootful docker, add `user: "${UID}:${GID}"` to keep artefacts host-owned.
     volumes:
-      # Bind-mounted so artefacts survive the container and stay host-owned.
+      # Live source, so `make test` and `make train` always run the current
+      # code without a rebuild. The image also bakes a copy in at build time --
+      # that baked copy is what makes the image standalone and reproducible;
+      # this mount just shadows it during development.
+      - ./src:/app/src:z
+      - ./tests:/app/tests:z
+      - ./scripts:/app/scripts:z
+      - ./tools:/app/tools:z
+      - ./configs:/app/configs:z
+      - ./data:/app/data:z
+      # Artefacts survive the container and stay host-owned.
       # runs/ is gitignored — trained weights are gated by default (charter §10).
-      - ./runs:/app/runs
-    # Keeps bind-mounted artefacts owned by the host user rather than root.
-    user: "${UID:-1000}:${GID:-1000}"
+      - ./runs:/app/runs:z
 
 volumes:
   pgdata:

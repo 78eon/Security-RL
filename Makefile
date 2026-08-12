@@ -1,4 +1,4 @@
-.PHONY: help build test test-local lint db-up db-down rollout train train-sparse catalogue manifest verify-nvd clean
+.PHONY: help build test test-local lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -19,9 +19,15 @@ db-up:          ## Start PostgreSQL (Module 4)
 db-down:        ## Stop PostgreSQL
 	$(COMPOSE) down
 
+db-summary:     ## Print what has been logged to PostgreSQL so far
+	$(COMPOSE) run --rm app python -m rlredteam.storage.postgres_logger
+
+db-shell:       ## Open a psql prompt against the project database
+	$(COMPOSE) exec postgres psql -U rlredteam -d rlredteam
+
 test:           ## Full test suite in Docker, with PostgreSQL up
 	$(COMPOSE) up -d postgres
-	$(COMPOSE) run --rm app pytest -q
+	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider
 
 test-local:     ## Test suite on the host venv (skips postgres-marked tests)
 	pytest -q -m "not postgres"
