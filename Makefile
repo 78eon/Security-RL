@@ -1,4 +1,4 @@
-.PHONY: help build test test-local lint db-up db-down rollout catalogue manifest verify-nvd clean
+.PHONY: help build test test-local lint db-up db-down rollout train train-sparse catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -37,6 +37,13 @@ manifest:       ## Recompute and print the SHA-256 catalogue manifest
 
 verify-nvd:     ## ONE-SHOT, ONLINE: diff the committed catalogue against live NVD
 	python tools/fetch_nvd.py --verify
+
+train:          ## 50k-step PPO pilot (shaped reward, seed 42)
+	$(COMPOSE) run --rm app python -m rlredteam.train --seed 42 --timesteps 50000
+
+train-sparse:   ## Same pilot on the sparse baseline
+	$(COMPOSE) run --rm app python -m rlredteam.train --seed 42 --timesteps 50000 \
+		--reward-config configs/sparse.yaml
 
 rollout:        ## Deterministic random-policy rollout on the frozen topology
 	$(COMPOSE) run --rm app python scripts/rollout_random.py --seed 42

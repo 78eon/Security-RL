@@ -194,6 +194,10 @@ class RewardWrapper(gym.Wrapper):
         return self.env.reset(**kwargs)
 
     def step(self, action):
+        # NASim's FlatActionSpace.get_action asserts isinstance(idx, int), and
+        # SB3 hands down a numpy int64, which fails that check. Coerce here so
+        # any array-based caller works rather than pushing the burden upstream.
+        action = int(action)
         obs, reward, done, step_limit_reached, info = self.env.step(action)
         event = self.adapter.build(
             action, reward, done, step_limit_reached, info, self._step

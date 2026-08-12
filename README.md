@@ -14,10 +14,10 @@ production or third-party network is used, and no human subjects are involved.
 | Reward core — CVE/CVSS × weight + tactic bonus, sparse toggle | done, tested |
 | Module 4 — PostgreSQL episode logger | done, tested |
 | Topology generator + NASim adapter + random rollout | done, tested |
-| PPO training loop (`train.py`) | in progress — see `docs/PPO_BRIEF.md` |
+| PPO training loop (`src/rlredteam/train.py`) | done, trains and logs |
 | Evaluation n=10 | spec written (`docs/EVAL_SPEC.md`), awaiting runs |
 
-147 tests passing, ruff clean.
+156 tests passing, ruff clean.
 
 ## Quick start
 
@@ -27,6 +27,7 @@ make build                    # build the training image
 make db-up                    # start PostgreSQL on :5433
 make test                     # full suite, including Postgres and NASim integration
 make rollout                  # deterministic random-policy rollout
+make train                    # 50k-step PPO pilot on the shaped reward
 ```
 
 `make` auto-detects docker or podman.
@@ -68,6 +69,7 @@ src/rlredteam/
   reward.py          The reward engine: shaped / sparse / native modes.
   topology.py        Seeded nasim.generate wrapper + config hashing.
   nasim_adapter.py   The only module that knows about both NASim and the reward core.
+  train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
 
 configs/             topology.yaml, shaped.yaml, sparse.yaml

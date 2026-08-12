@@ -45,6 +45,7 @@ testpaths = ["tests"]
 markers = [
     "integration: needs nasim installed",
     "postgres: needs a live PostgreSQL (docker compose up -d postgres)",
+    "slow: runs actual training; excluded from the default fast suite",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 
