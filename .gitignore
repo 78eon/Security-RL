@@ -1,6 +1,9 @@
 # Secrets — NVD API key lives here, never committed
 .env
 
+# Internal working notes, not part of the deliverable
+docs/BUILD_PLAN.md
+
 # Trained attack-policy weights are gated by default (charter §10, dual-use)
 runs/
 *.zip

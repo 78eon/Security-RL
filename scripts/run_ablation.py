@@ -3,8 +3,8 @@
 
 Enumerates the run grid and asserts the two arms are genuinely comparable:
 identical topology config, identical CVE catalogue, identical seeds, differing
-in nothing but the reward. It deliberately does NOT train -- `train.py` is
-student-owned (see docs/PPO_BRIEF.md). This calls into it once it exists.
+in nothing but the reward. It deliberately does NOT train -- it calls
+into `train.py` once that exists (see docs/PPO_BRIEF.md).
 
     python scripts/run_ablation.py --dry-run     # print the grid and checks
 """
@@ -117,8 +117,8 @@ def main() -> int:
         print(f"  {run.name:<24} reward={run.reward_config_path.name}")
 
     print(
-        "\nSTUB: no training performed. train.py is student-owned "
-        "(docs/PPO_BRIEF.md); wire it in here once written."
+        "\nSTUB: no training performed. "
+        "Wire train.py in here once written (docs/PPO_BRIEF.md)."
     )
     return 0
 

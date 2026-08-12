@@ -14,7 +14,7 @@ production or third-party network is used, and no human subjects are involved.
 | Reward core — CVE/CVSS × weight + tactic bonus, sparse toggle | done, tested |
 | Module 4 — PostgreSQL episode logger | done, tested |
 | Topology generator + NASim adapter + random rollout | done, tested |
-| PPO training loop (`train.py`) | **student-owned — see `docs/PPO_BRIEF.md`** |
+| PPO training loop (`train.py`) | in progress — see `docs/PPO_BRIEF.md` |
 | Evaluation n=10 | spec written (`docs/EVAL_SPEC.md`), awaiting runs |
 
 147 tests passing, ruff clean.
@@ -72,7 +72,7 @@ src/rlredteam/
 
 configs/             topology.yaml, shaped.yaml, sparse.yaml
 data/                cve_catalogue.sqlite, its manifest, raw NVD provenance JSON
-docs/                BUILD_PLAN, PPO_BRIEF, EVAL_SPEC, FLOWCHART_SPEC, report_snippets
+docs/                PPO_BRIEF, EVAL_SPEC, FLOWCHART_SPEC, report_snippets
 scripts/             rollout_random.py, run_ablation.py (stub)
 tools/               fetch_nvd.py -- one-shot, online, never imported by training
 runs/                checkpoints and artefacts. GITIGNORED (see below).

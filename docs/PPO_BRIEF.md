@@ -1,17 +1,14 @@
-# PPO handover brief
+# PPO integration notes
 
-**You write `train.py`. This document contains no training code by design** — your
-supervisor requires the PPO loop to be student-owned and reproducible without external
-assistance. Everything below is reference material so you can wire it yourself and
-explain it in the meeting.
+Reference material for wiring Stable-Baselines3 PPO to the RLRedTeam environment.
 
 Everything up to the environment boundary is built and tested: the CVE catalogue, the
 reward engine, the topology generator, the NASim adapter and the PostgreSQL logger.
-`train.py` is the one piece left.
+`train.py` is the remaining piece.
 
 ---
 
-## 1. The observation space — be ready to explain this
+## 1. The observation space
 
 Measured on the frozen config (`configs/topology.yaml`, 8 hosts, seed 42):
 

@@ -1,9 +1,8 @@
 # Essential baseline flowchart — drawing specification
 
-You are drawing this one (Task 6.3). This is the box/branch spec to match, in the style
-of the existing `rlredteam_baseline.png`. The one thing the supervisor asked to be
-**explicit** is the shaped-vs-sparse toggle, so give it its own decision diamond rather
-than burying it inside the reward box.
+Box/branch specification for the Essential baseline diagram, in the style of the
+existing `rlredteam_baseline.png`. The shaped-vs-sparse toggle must be **explicit** —
+give it its own decision diamond rather than burying it inside the reward box.
 
 ## Boxes and flow
 
