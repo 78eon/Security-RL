@@ -19,6 +19,20 @@ production or third-party network is used, and no human subjects are involved.
 
 156 tests passing, ruff clean.
 
+## Documentation
+
+**[`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md)** — start here. Plain-English explanation of
+what the system does, what every file contributes, how to run it, and the design decisions
+behind it. Written to be readable without opening the code.
+
+| Document | Purpose |
+|---|---|
+| `docs/PROJECT_GUIDE.md` | Full guide and user manual |
+| `docs/PPO_BRIEF.md` | Observation/action spaces, seeding, SB3 integration notes |
+| `docs/EVAL_SPEC.md` | Pre-registered n=10 evaluation protocol and results template |
+| `docs/FLOWCHART_SPEC.md` | Drawing spec for the baseline diagram |
+| `docs/report_snippets.md` | Draft text for the dissertation |
+
 ## Quick start
 
 ```bash
@@ -74,7 +88,7 @@ src/rlredteam/
 
 configs/             topology.yaml, shaped.yaml, sparse.yaml
 data/                cve_catalogue.sqlite, its manifest, raw NVD provenance JSON
-docs/                PPO_BRIEF, EVAL_SPEC, FLOWCHART_SPEC, report_snippets
+docs/                PROJECT_GUIDE, PPO_BRIEF, EVAL_SPEC, FLOWCHART_SPEC, report_snippets
 scripts/             rollout_random.py, run_ablation.py (stub)
 tools/               fetch_nvd.py -- one-shot, online, never imported by training
 runs/                checkpoints and artefacts. GITIGNORED (see below).
