@@ -1,4 +1,4 @@
-.PHONY: help build test test-local lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
+.PHONY: help build test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -25,12 +25,19 @@ db-summary:     ## Print what has been logged to PostgreSQL so far
 db-shell:       ## Open a psql prompt against the project database
 	$(COMPOSE) exec postgres psql -U rlredteam -d rlredteam
 
-test:           ## Full test suite in Docker, with PostgreSQL up
+test:           ## Everything — 173 tests, ~90s. Run before every commit
 	$(COMPOSE) up -d postgres
 	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider
 
-test-local:     ## Test suite on the host venv (skips postgres-marked tests)
-	pytest -q -m "not postgres"
+test-fast:      ## Skip the training tests — ~6s. Use this while coding
+	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider -m "not slow"
+
+test-slow:      ## Only the training tests, printing their measured numbers
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app pytest -p no:cacheprovider -m slow -v -s
+
+test-one:       ## Run tests matching a name: make test-one T=farming
+	$(COMPOSE) run --rm app pytest -p no:cacheprovider -k "$(T)" -v -s
 
 lint:           ## Ruff
 	$(COMPOSE) run --rm app ruff check src tests tools scripts
