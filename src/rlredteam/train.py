@@ -32,11 +32,38 @@ from rlredteam.catalogue import CVECatalogue
 from rlredteam.events import AccessLevel
 from rlredteam.manifest import digest
 from rlredteam.nasim_adapter import RewardWrapper
+from rlredteam import provenance as provenance_mod
+from rlredteam.provenance import ExperimentManifest
 from rlredteam.reward import RewardConfig
 from rlredteam.topology import TopologyConfig, describe, make_env
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = REPO_ROOT / "runs"
+
+# CP-18: every PPO hyperparameter is recorded explicitly rather than inherited
+# silently from SB3, so a manifest fully describes the agent that was trained.
+# These ARE the SB3 defaults except ent_coef, which is raised from 0.0 because a
+# 120-action space where most actions are invalid early collapses exploration
+# otherwise. CP-19: that single deviation is declared here, not hidden.
+PPO_DEFAULTS: dict = {
+    "policy": "MlpPolicy",
+    "learning_rate": 3e-4,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.01,      # deviation from the SB3 default of 0.0
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "device": "cpu",
+}
+SB3_DEFAULT_DEVIATIONS = {"ent_coef": (0.0, 0.01)}
+
+# The one Essential topology. Every run in the graded comparison trains on this
+# network; only the training seed and the reward mode vary (CP-10, CP-11).
+DEFAULT_TOPOLOGY_SEED = 42
 
 
 # -- reproducibility -------------------------------------------------------
@@ -275,7 +302,11 @@ def train(args: argparse.Namespace) -> dict:
     reward_config = RewardConfig.from_yaml(args.reward_config)
     catalogue = CVECatalogue.open_default()
 
-    topology_seed = args.topology_seed if args.topology_seed is not None else args.seed
+    # CP-11: the topology seed is NEVER derived from the training seed. Doing so
+    # gives every seed its own network, which confounds reward mode with
+    # topology and destroys the causal comparison the ablation exists to make.
+    # It has a fixed default and must be changed deliberately.
+    topology_seed = args.topology_seed
     run_name = f"{reward_config.mode}-s{args.seed}-t{topology_seed}"
     out_dir = RUNS_DIR / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -283,25 +314,58 @@ def train(args: argparse.Namespace) -> dict:
     env = build_env(topology_config, reward_config, catalogue, topology_seed, args.seed)
     summary = describe(env.envs[0].env)
 
-    provenance = {
-        "run_name": run_name,
-        "seed": args.seed,
-        "topology_seed": topology_seed,
-        "timesteps": args.timesteps,
-        "reward_mode": str(reward_config.mode),
-        "reward_config_path": str(args.reward_config),
-        "reward_config_hash": reward_config.hash(),
-        "topology_config_hash": topology_config.config_hash(),
-        "cve_manifest_sha256": digest(catalogue),
-        "topology": summary,
-        "reward": asdict(reward_config) | {"mode": str(reward_config.mode)},
-    }
-    (out_dir / "config.snapshot.json").write_text(json.dumps(provenance, indent=2, default=str))
+    described = summary
+    ppo_config = dict(PPO_DEFAULTS)
+    ppo_config["ent_coef"] = args.ent_coef
+
+    manifest = ExperimentManifest(
+        experiment_id=run_name,
+        git_commit=provenance_mod.git_commit(),
+        git_dirty=provenance_mod.git_dirty(),
+        python_version=provenance_mod.python_version(),
+        dependency_lock_hash=provenance_mod.dependency_lock_hash(),
+        docker_image_digest=provenance_mod.docker_image_digest(),
+        training_seed=args.seed,
+        topology_seed=topology_seed,
+        topology_hash=provenance_mod.topology_hash(described),
+        topology_config_hash=topology_config.config_hash(),
+        environment_config_hash=provenance_mod.environment_config_hash(described),
+        cve_database_hash=digest(catalogue),
+        reward_config_hash=reward_config.hash(),
+        ppo_config_hash=provenance_mod._digest(ppo_config),
+        dataset_version=str(len(catalogue)),
+        training_budget=args.timesteps,
+        checkpoint_path=str(out_dir / "model.zip"),
+        ppo_config=ppo_config,
+        reward_mode=str(reward_config.mode),
+    )
+
+    frozen = json.loads(Path(args.frozen).read_text()) if args.frozen else None
+    gate = provenance_mod.run_gate(
+        manifest,
+        frozen=frozen,
+        require_secure_db=args.postgres,
+        require_offline=not args.allow_network,
+    )
+    print("pre-run gate:")
+    print(gate.report())
+    if not args.skip_gate:
+        provenance_mod.enforce(gate)
+    elif not gate.passed:
+        print("  WARNING: gate failures ignored via --skip-gate; this run is not "
+              "valid for the graded comparison.")
+
+    manifest.write(out_dir / "manifest.json")
+    provenance = manifest.to_dict() | {"topology": summary}
+    (out_dir / "config.snapshot.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True, default=str)
+    )
 
     print(f"run                  : {run_name}")
     print(f"reward mode          : {reward_config.mode}")
-    print(f"topology config hash : {provenance['topology_config_hash']}")
-    print(f"CVE manifest sha256  : {provenance['cve_manifest_sha256']}")
+    print(f"topology hash        : {manifest.topology_hash}")
+    print(f"topology config hash : {manifest.topology_config_hash}")
+    print(f"CVE database hash    : {manifest.cve_database_hash}")
     print(f"observation space    : {env.observation_space.shape}")
     print(f"action space         : {env.action_space}")
     print(f"output               : {out_dir}")
@@ -313,9 +377,9 @@ def train(args: argparse.Namespace) -> dict:
         episode_logger = EpisodeLogger.start(
             name=run_name,
             reward_mode=str(reward_config.mode),
-            config_hash=provenance["reward_config_hash"],
-            topology_config_hash=provenance["topology_config_hash"],
-            cve_manifest_sha256=provenance["cve_manifest_sha256"],
+            config_hash=manifest.reward_config_hash,
+            topology_config_hash=manifest.topology_hash,
+            cve_manifest_sha256=manifest.cve_database_hash,
             seed_set=[args.seed],
             log_steps=args.log_steps,
         )
@@ -418,9 +482,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--topology-seed",
         type=int,
-        default=None,
-        help="topology seed; defaults to --seed. Fix it to measure training "
-        "variance on one network, vary it to measure generalisation.",
+        default=DEFAULT_TOPOLOGY_SEED,
+        help=(
+            f"network to train on (default {DEFAULT_TOPOLOGY_SEED}). Deliberately "
+            "independent of --seed: holding it fixed while varying --seed is what "
+            "makes the shaped-vs-sparse comparison causal. Change it only to "
+            "measure generalisation across networks, and say so in the write-up."
+        ),
     )
     parser.add_argument(
         "--reward-config",
@@ -433,6 +501,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--log-steps", action="store_true", help="also persist per-step rows")
     parser.add_argument("--checkpoint-every", type=int, default=0)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--frozen", type=Path, default=None,
+        help="experiment manifest of frozen hashes; a mismatch stops the run",
+    )
+    parser.add_argument(
+        "--allow-network", action="store_true",
+        help="permit external network during training (not valid for graded runs)",
+    )
+    parser.add_argument(
+        "--skip-gate", action="store_true",
+        help="report gate failures but train anyway (smoke tests only)",
+    )
     return parser.parse_args(argv)
 
 

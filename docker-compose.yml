@@ -1,21 +1,31 @@
+# Hardened runtime.
+#
+# Credentials come from the environment with NO defaults (CP-01): a missing
+# secret must stop startup rather than silently fall back to a known password.
+# Copy .env.example to .env and set them.
+
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-rlredteam}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rlredteam}
-      POSTGRES_DB: ${POSTGRES_DB:-rlredteam}
+      # No ":-default" fallbacks — compose errors out if these are unset.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports:
-      # 5433 on the host to avoid clashing with a local 5432.
-      - "5433:5432"
+      # CP-02: loopback only. Without the explicit 127.0.0.1 the database
+      # listens on every interface and is reachable from the local network.
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./src/rlredteam/storage/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks: [rlredteam-internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rlredteam}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 3s
       timeout: 3s
       retries: 20
+    security_opt: ["no-new-privileges:true"]
 
   app:
     build: .
@@ -25,32 +35,48 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-rlredteam}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rlredteam}
-      POSTGRES_DB: ${POSTGRES_DB:-rlredteam}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PYTHONHASHSEED: "0"
-    # No `user:` directive. Under rootless podman the host user is already
-    # mapped to container root, so pinning user: 1000:1000 selects a DIFFERENT
-    # identity that cannot write the bind-mounted runs/ directory. Under
-    # rootful docker, add `user: "${UID}:${GID}"` to keep artefacts host-owned.
+      RLREDTEAM_IMAGE_DIGEST: ${RLREDTEAM_IMAGE_DIGEST:-}
+    # CP-03: this network reaches postgres but has no route out. NVD acquisition
+    # is a separate, deliberate, online step (tools/fetch_nvd.py) run outside it.
+    networks: [rlredteam-internal]
     volumes:
-      # Live source, so `make test` and `make train` always run the current
-      # code without a rebuild. The image also bakes a copy in at build time --
-      # that baked copy is what makes the image standalone and reproducible;
-      # this mount just shadows it during development.
-      - ./src:/app/src:z
-      - ./tests:/app/tests:z
-      # Mounted for tooling only (ruff). The training image never imports gui/;
-      # the GUI is a separate image with its own, much smaller, dependencies.
-      - ./gui:/app/gui:z
-      - ./scripts:/app/scripts:z
-      - ./tools:/app/tools:z
-      - ./configs:/app/configs:z
-      - ./data:/app/data:z
-      - ./docs:/app/docs:z
-      # Artefacts survive the container and stay host-owned.
-      # runs/ is gitignored — trained weights are gated by default (charter §10).
-      - ./runs:/app/runs:z
+      # CP-05: everything a run must not modify is read-only. A run that can
+      # silently rewrite its own source, config or frozen CVE data is not
+      # reproducible; read-only mounts make that impossible rather than merely
+      # discouraged.
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./gui:/app/gui:ro
+      - ./scripts:/app/scripts:ro
+      - ./tools:/app/tools:ro
+      - ./configs:/app/configs:ro
+      - ./data:/app/data:ro
+      # Read-only, so provenance can record the commit without a run being able
+      # to alter history.
+      - ./.git:/app/.git:ro
+      # Read by the security suite, which checks the deployment configuration
+      # itself rather than runtime behaviour.
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - ./Dockerfile:/app/Dockerfile:ro
+      - ./.gitignore:/app/.gitignore:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./.env.example:/app/.env.example:ro
+      # The single writable path.
+      - ./runs:/app/runs:rw
+    # CP-06
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    mem_limit: 12g
+
+networks:
+  rlredteam-internal:
+    # No egress. This is what makes the offline-training check pass.
+    internal: true
 
 volumes:
   pgdata:

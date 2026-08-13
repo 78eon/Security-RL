@@ -22,7 +22,21 @@ COPY scripts ./scripts
 COPY tools ./tools
 COPY tests ./tests
 
+# CP-04: a dedicated unprivileged user. Training never needs root, and running
+# as root means a bug in the environment writes with root authority on every
+# bind mount.
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin rlredteam \
+    && mkdir -p /app/runs && chown -R 10001:10001 /app/runs \
+    # /app is bind-mounted from the host and so is owned by a different uid than
+    # the one this image runs as. Git refuses to read a repository it considers
+    # foreign ("dubious ownership"), which would silently strip commit
+    # provenance from every run. The mount is read-only, so trusting it here is
+    # safe: nothing in the container can write to history.
+    && git config --system --add safe.directory /app
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=0
+
+USER 10001:10001
 
 CMD ["pytest", "-q"]

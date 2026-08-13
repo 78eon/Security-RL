@@ -27,21 +27,27 @@ class RepositoryError(RuntimeError):
 
 @dataclass(frozen=True)
 class ConnectionSettings:
+    """CP-01: no default credentials. Missing secrets are reported, not guessed."""
+
     host: str = "localhost"
     port: int = 5433
-    user: str = "rlredteam"
-    password: str = "rlredteam"
-    dbname: str = "rlredteam"
+    user: str = ""
+    password: str = ""
+    dbname: str = ""
 
     @classmethod
     def from_env(cls) -> ConnectionSettings:
         return cls(
             host=os.environ.get("POSTGRES_HOST", "localhost"),
             port=int(os.environ.get("POSTGRES_PORT", "5433")),
-            user=os.environ.get("POSTGRES_USER", "rlredteam"),
-            password=os.environ.get("POSTGRES_PASSWORD", "rlredteam"),
-            dbname=os.environ.get("POSTGRES_DB", "rlredteam"),
+            user=os.environ.get("POSTGRES_USER", ""),
+            password=os.environ.get("POSTGRES_PASSWORD", ""),
+            dbname=os.environ.get("POSTGRES_DB", ""),
         )
+
+    @property
+    def complete(self) -> bool:
+        return bool(self.user and self.password and self.dbname)
 
     @property
     def conninfo(self) -> str:
@@ -60,6 +66,12 @@ class Repository:
         self.settings = settings or ConnectionSettings.from_env()
 
     def _connect(self):
+        if not self.settings.complete:
+            raise RepositoryError(
+                "Database credentials not supplied",
+                "POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB must be set. "
+                "No default is provided.",
+            )
         try:
             return psycopg.connect(self.settings.conninfo, connect_timeout=4)
         except psycopg.OperationalError as exc:

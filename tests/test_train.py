@@ -34,7 +34,19 @@ def test_defaults_point_at_the_shaped_arm() -> None:
     args = parse_args([])
     assert args.seed == 42
     assert args.reward_config.name == "shaped.yaml"
-    assert args.topology_seed is None  # falls back to --seed
+
+
+def test_topology_seed_is_not_derived_from_training_seed() -> None:
+    """CP-11. Deriving the network from the training seed gives every seed its
+    own topology, which confounds reward mode with topology and destroys the
+    causal comparison the ablation exists to make."""
+    from rlredteam.train import DEFAULT_TOPOLOGY_SEED
+
+    for seed in (42, 43, 51):
+        args = parse_args(["--seed", str(seed)])
+        assert args.topology_seed == DEFAULT_TOPOLOGY_SEED, (
+            f"--seed {seed} changed the topology to {args.topology_seed}"
+        )
 
 
 def test_topology_seed_is_separable_from_training_seed() -> None:

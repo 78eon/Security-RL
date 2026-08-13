@@ -20,14 +20,35 @@ from psycopg.types.json import Jsonb
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
+class MissingCredentials(RuntimeError):
+    """Raised when a required database secret is not supplied."""
+
+
 def connection_string() -> str:
-    """Build a libpq connection string from the environment."""
+    """Build a libpq connection string from the environment.
+
+    CP-01: there is no fallback password. A default credential is worse than no
+    credential -- it is published in the repository, works everywhere, and gets
+    silently relied upon. Missing secrets stop startup instead.
+    """
+    required = {
+        "POSTGRES_USER": os.environ.get("POSTGRES_USER"),
+        "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
+        "POSTGRES_DB": os.environ.get("POSTGRES_DB"),
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        raise MissingCredentials(
+            "Database credentials not supplied: "
+            + ", ".join(missing)
+            + ". Copy .env.example to .env and set them; no default is provided."
+        )
     return (
         f"host={os.environ.get('POSTGRES_HOST', 'localhost')} "
         f"port={os.environ.get('POSTGRES_PORT', '5433')} "
-        f"user={os.environ.get('POSTGRES_USER', 'rlredteam')} "
-        f"password={os.environ.get('POSTGRES_PASSWORD', 'rlredteam')} "
-        f"dbname={os.environ.get('POSTGRES_DB', 'rlredteam')}"
+        f"user={required['POSTGRES_USER']} "
+        f"password={required['POSTGRES_PASSWORD']} "
+        f"dbname={required['POSTGRES_DB']}"
     )
 
 
