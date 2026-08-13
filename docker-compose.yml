@@ -40,6 +40,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PYTHONHASHSEED: "0"
       RLREDTEAM_IMAGE_DIGEST: ${RLREDTEAM_IMAGE_DIGEST:-}
+      # Computed on the host: the container sees only the mounted subset and
+      # would report every unmounted tracked file as deleted.
+      RLREDTEAM_GIT_DIRTY: ${RLREDTEAM_GIT_DIRTY:-}
     # CP-03: this network reaches postgres but has no route out. NVD acquisition
     # is a separate, deliberate, online step (tools/fetch_nvd.py) run outside it.
     networks: [rlredteam-internal]

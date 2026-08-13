@@ -42,20 +42,42 @@ def git_commit() -> str | None:
     return result.stdout.strip() or None
 
 
-def git_dirty() -> bool:
-    """True when the working tree has uncommitted changes.
+def git_dirty() -> bool | None:
+    """Whether the working tree has uncommitted changes; None if undeterminable.
 
     A dirty tree means the recorded commit does not describe the code that
     actually ran, so the run is not reproducible from that commit alone.
+
+    Inside the training container only selected paths are mounted (CP-05), so
+    git legitimately reports every unmounted tracked file as deleted. Asking git
+    here would therefore always answer "dirty". The host computes the real
+    answer and passes it in; absent that, this returns None ("unknown") rather
+    than guessing, because a false "clean" is worse than an honest gap.
     """
+    declared = os.environ.get("RLREDTEAM_GIT_DIRTY")
+    if declared is not None:
+        return declared.strip().lower() in ("1", "true", "yes", "dirty")
+
     try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             capture_output=True, text=True, timeout=5, cwd=REPO_ROOT, check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    return bool(result.stdout.strip())
+        return None
+    if result.returncode != 0:
+        return None
+
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    # Deletions of files that are simply not mounted are an artefact of the
+    # partial mount, not a real modification.
+    artefacts = [
+        ln for ln in lines
+        if ln[:2].strip() == "D" and not (REPO_ROOT / ln[3:].strip()).exists()
+    ]
+    if artefacts and len(artefacts) == len(lines):
+        return None
+    return bool(lines)
 
 
 def dependency_lock_hash() -> str:
@@ -120,7 +142,7 @@ def environment_config_hash(described: dict) -> str:
 class ExperimentManifest:
     experiment_id: str
     git_commit: str | None
-    git_dirty: bool
+    git_dirty: bool | None
     python_version: str
     dependency_lock_hash: str
     docker_image_digest: str
@@ -222,12 +244,20 @@ def run_gate(
         bool(manifest.git_commit),
         "" if manifest.git_commit else "not a git checkout",
     )
-    result.add(
-        "working tree is clean",
-        not manifest.git_dirty,
-        "uncommitted changes — the recorded commit does not describe this run"
-        if manifest.git_dirty else "",
-    )
+    if manifest.git_dirty is None:
+        result.add(
+            "working tree state known",
+            False,
+            "cannot determine — set RLREDTEAM_GIT_DIRTY on the host "
+            "(the container sees only a partial checkout)",
+        )
+    else:
+        result.add(
+            "working tree is clean",
+            not manifest.git_dirty,
+            "uncommitted changes — the recorded commit does not describe this run"
+            if manifest.git_dirty else "",
+        )
     result.add("dependency lock recorded", bool(manifest.dependency_lock_hash))
 
     if require_secure_db:

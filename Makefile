@@ -2,6 +2,8 @@
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
+# The container has only a partial checkout, so dirtiness is decided here.
+export RLREDTEAM_GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo 1 || echo 0)
 
 # This machine runs podman; CI or another machine may have docker. Auto-detect
 # rather than hardcode, so `make test` works either way.
