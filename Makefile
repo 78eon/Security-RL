@@ -64,8 +64,12 @@ gui-build:      ## Build the desktop GUI image (separate from training)
 	podman build -t rlredteam-gui -f Dockerfile.gui .
 
 gui:            ## Launch the analyst desktop app on the host display
+	@test -f .env || { echo "no .env — copy .env.example and set credentials"; exit 1; }
 	xhost +local: >/dev/null 2>&1 || true
+	set -a; . ./.env; set +a; \
 	podman run --rm -e DISPLAY="$$DISPLAY" \
+		-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+		-e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5433 \
 		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
 		-v "$$PWD:/app:z" -w /app --net=host rlredteam-gui python -m gui
 
