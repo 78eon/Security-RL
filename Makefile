@@ -1,4 +1,4 @@
-.PHONY: help build test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -40,7 +40,7 @@ test-one:       ## Run tests matching a name: make test-one T=farming
 	$(COMPOSE) run --rm app pytest -p no:cacheprovider -k "$(T)" -v -s
 
 lint:           ## Ruff
-	$(COMPOSE) run --rm app ruff check src tests tools scripts
+	$(COMPOSE) run --rm app ruff check src gui tests tools scripts
 
 catalogue:      ## Rebuild the frozen SQLite CVE catalogue from data/provenance/
 	$(COMPOSE) run --rm app python -m rlredteam.catalogue build
@@ -57,6 +57,19 @@ train:          ## 50k-step PPO pilot (shaped reward, seed 42)
 train-sparse:   ## Same pilot on the sparse baseline
 	$(COMPOSE) run --rm app python -m rlredteam.train --seed 42 --timesteps 50000 \
 		--reward-config configs/sparse.yaml
+
+gui-build:      ## Build the desktop GUI image (separate from training)
+	podman build -t rlredteam-gui -f Dockerfile.gui .
+
+gui:            ## Launch the analyst desktop app on the host display
+	xhost +local: >/dev/null 2>&1 || true
+	podman run --rm -e DISPLAY="$$DISPLAY" \
+		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+		-v "$$PWD:/app:z" -w /app --net=host rlredteam-gui python -m gui
+
+gui-test:       ## Headless tests for the GUI data layer
+	podman run --rm -v "$$PWD:/app:z" -w /app rlredteam-gui \
+		sh -c "pip install -q pytest && python -m pytest tests/test_gui_data.py -q -p no:cacheprovider"
 
 rollout:        ## Deterministic random-policy rollout on the frozen topology
 	$(COMPOSE) run --rm app python scripts/rollout_random.py --seed 42

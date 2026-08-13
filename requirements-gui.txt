@@ -1,0 +1,6 @@
+# GUI-only dependencies. Deliberately no torch, no nasim, no stable-baselines3 —
+# the GUI shells out to the training image instead of importing the trainer.
+PySide6==6.11.1
+pyqtgraph==0.14.0
+psycopg[binary]==3.2.3
+numpy==2.1.3

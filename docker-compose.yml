@@ -40,10 +40,14 @@ services:
       # this mount just shadows it during development.
       - ./src:/app/src:z
       - ./tests:/app/tests:z
+      # Mounted for tooling only (ruff). The training image never imports gui/;
+      # the GUI is a separate image with its own, much smaller, dependencies.
+      - ./gui:/app/gui:z
       - ./scripts:/app/scripts:z
       - ./tools:/app/tools:z
       - ./configs:/app/configs:z
       - ./data:/app/data:z
+      - ./docs:/app/docs:z
       # Artefacts survive the container and stay host-owned.
       # runs/ is gitignored — trained weights are gated by default (charter §10).
       - ./runs:/app/runs:z

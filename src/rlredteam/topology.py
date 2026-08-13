@@ -125,6 +125,17 @@ def describe(env) -> dict:
         "name": scenario.name,
         "num_hosts": len(scenario.hosts),
         "num_subnets": len(scenario.subnets),
+        # Structure, not just counts. Without these the replay view cannot draw
+        # a network: it knows how many hosts exist but not which subnet each
+        # sits in, nor which subnets connect. Runs predating this degrade to a
+        # grouped layout without edges.
+        # subnets[0] is NASim's internet subnet, not a real one; real subnet
+        # numbers start at 1 and match the first element of a host address.
+        # Cast to plain int: the matrix holds numpy floats, which json would
+        # otherwise serialise as strings via default=str.
+        "subnets": [int(s) for s in scenario.subnets],
+        "topology": [[int(v) for v in row] for row in scenario.topology],
+        "hosts": [list(addr) for addr in sorted(scenario.hosts)],
         "services": list(scenario.services),
         "os": list(scenario.os),
         "processes": list(scenario.processes),

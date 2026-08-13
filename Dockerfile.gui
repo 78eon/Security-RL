@@ -1,0 +1,45 @@
+# Desktop GUI image — renders on the host display via X11 (XWayland works).
+#
+# Deliberately separate from the training image. The GUI never trains: it shells
+# out to `podman compose run app` for that, so it needs no torch, no nasim and
+# no stable-baselines3. If this image ever needs them, the process boundary has
+# been broken and training has leaked into the UI.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Qt's xcb platform plugin needs all of these even when only drawing through
+# XWayland. Missing any one produces an unhelpful "could not load the Qt
+# platform plugin xcb" at startup, so they are pinned as a set.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 libgl1 libegl1 libdbus-1-3 \
+        libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+        libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+        libxcb-xinerama0 libxcb-xfixes0 libxcb-shm0 libxcb-sync1 libxcb-xkb1 \
+        libx11-xcb1 libxrender1 libxi6 libsm6 libice6 libxext6 \
+        libfontconfig1 libfreetype6 \
+        curl ca-certificates fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+# IBM Plex, which the design specifies. Debian 13 has no fonts-ibm-plex package,
+# so these come from the Google Fonts mirror. Bundling them is the main practical
+# argument for containerising the GUI: the typography is guaranteed rather than
+# dependent on whatever the host happens to have installed.
+RUN mkdir -p /usr/share/fonts/truetype/ibmplex && cd /usr/share/fonts/truetype/ibmplex \
+    && base=https://github.com/google/fonts/raw/main/ofl \
+    && curl -fsSL -o IBMPlexSans.ttf \
+        "$base/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf" \
+    && for w in Regular Medium SemiBold; do \
+         curl -fsSL -o "IBMPlexMono-$w.ttf" "$base/ibmplexmono/IBMPlexMono-$w.ttf"; \
+       done \
+    && fc-cache -f >/dev/null \
+    && fc-list | grep -ci "IBM Plex"
+
+COPY requirements-gui.txt ./
+RUN pip install --no-cache-dir -r requirements-gui.txt
+
+ENV PYTHONUNBUFFERED=1 \
+    QT_X11_NO_MITSHM=1 \
+    QT_QPA_PLATFORM=xcb
+
+CMD ["python", "-m", "gui"]
