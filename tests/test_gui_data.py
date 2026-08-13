@@ -206,3 +206,31 @@ def test_stylesheet_has_no_unsubstituted_tokens() -> None:
     qss = theme.build_stylesheet()
     assert "@" not in qss, "unsubstituted token left in the stylesheet"
     assert theme.ARM_1 in qss
+
+
+# -- Train view: the displayed command must not leak secrets ----------------
+
+
+def test_command_preview_redacts_the_database_password() -> None:
+    """The command is shown on screen and projected during demos."""
+    import os
+
+    os.environ["POSTGRES_PASSWORD"] = "hunter2-should-not-appear"
+    from gui.workers.trainer import TrainRequest
+
+    request = TrainRequest(seed=42, topology_seed=42, timesteps=1000)
+    assert "hunter2-should-not-appear" not in request.command_line
+    assert "POSTGRES_PASSWORD=********" in request.command_line
+    # The process itself still receives the real value.
+    assert any("hunter2-should-not-appear" in a for a in request.argv())
+
+
+def test_training_never_launches_on_host_networking() -> None:
+    """CP-03. Host networking reaches the database but also the internet, and
+    the pre-run gate refuses to train with an open network."""
+    from gui.workers.trainer import TrainRequest
+
+    argv = TrainRequest().argv()
+    network = argv[argv.index("--network") + 1]
+    assert network != "host", "training would have internet access"
+    assert "internal" in network

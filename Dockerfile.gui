@@ -35,6 +35,13 @@ RUN mkdir -p /usr/share/fonts/truetype/ibmplex && cd /usr/share/fonts/truetype/i
     && fc-cache -f >/dev/null \
     && fc-list | grep -ci "IBM Plex"
 
+# The Train view launches training on the host's container engine through the
+# rootless podman socket, so it needs the client binary. It never runs a nested
+# engine of its own -- the socket is the host user's, carrying that user's
+# privileges and no more.
+RUN apt-get update && apt-get install -y --no-install-recommends podman \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements-gui.txt ./
 RUN pip install --no-cache-dir -r requirements-gui.txt
 

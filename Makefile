@@ -70,7 +70,11 @@ gui:            ## Launch the analyst desktop app on the host display
 	podman run --rm -e DISPLAY="$$DISPLAY" \
 		-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
 		-e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5433 \
+		-e RLREDTEAM_HOST_REPO="$$PWD" \
+		-e CONTAINER_HOST="unix:///run/podman/podman.sock" \
+		-e RLREDTEAM_NETWORK="sourcecode_rlredteam-internal" \
 		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+		-v "$$XDG_RUNTIME_DIR/podman/podman.sock:/run/podman/podman.sock:z" \
 		-v "$$PWD:/app:z" -w /app --net=host rlredteam-gui python -m gui
 
 gui-test:       ## Headless tests for the GUI data layer

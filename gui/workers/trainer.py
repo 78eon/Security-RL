@@ -8,10 +8,32 @@ no thread.
 
 from __future__ import annotations
 
+import os
 import shlex
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, QProcess, Signal
+
+
+def host_repo_root() -> str:
+    """The repository path as the HOST sees it.
+
+    The training container is started by the host's engine, so its bind mount
+    must use a host path. Inside the GUI container the repo appears at /app,
+    which the host does not have -- mounting that would silently give training
+    an empty directory. The launcher passes the real path in.
+    """
+    return os.environ.get("RLREDTEAM_HOST_REPO", os.getcwd())
+
+
+def training_network() -> str:
+    """The isolated network training must run on (CP-03).
+
+    Not `host`. Host networking would reach postgres, but it also reaches the
+    internet, and the pre-run gate refuses to train with an open network. The
+    compose project's internal network gives the database and nothing else.
+    """
+    return os.environ.get("RLREDTEAM_NETWORK", "sourcecode_rlredteam-internal")
 
 
 @dataclass(frozen=True)
@@ -28,8 +50,21 @@ class TrainRequest:
         return f"{self.reward_mode}-s{self.seed}-t{self.topology_seed}"
 
     def argv(self) -> list[str]:
+        # `podman run`, deliberately not `podman compose run`. Compose rebuilds
+        # the project network, which severs the database connection of anything
+        # already running -- that is how an earlier 20-run grid was killed.
         args = [
-            "podman", "compose", "run", "--rm", "app",
+            "podman", "run", "--rm",
+            "--network", training_network(),
+            "-v", f"{host_repo_root()}:/app:z",
+            "-w", "/app",
+            "-e", f"POSTGRES_USER={os.environ.get('POSTGRES_USER', '')}",
+            "-e", f"POSTGRES_PASSWORD={os.environ.get('POSTGRES_PASSWORD', '')}",
+            "-e", f"POSTGRES_DB={os.environ.get('POSTGRES_DB', '')}",
+            "-e", "POSTGRES_HOST=postgres",
+            "-e", "POSTGRES_PORT=5432",
+            "-e", f"RLREDTEAM_GIT_DIRTY={os.environ.get('RLREDTEAM_GIT_DIRTY', '0')}",
+            "localhost/sourcecode_app:latest",
             "python", "-m", "rlredteam.train",
             "--seed", str(self.seed),
             "--topology-seed", str(self.topology_seed),
@@ -44,7 +79,19 @@ class TrainRequest:
 
     @property
     def command_line(self) -> str:
-        return " ".join(shlex.quote(a) for a in self.argv())
+        """The command, with secrets redacted.
+
+        This string is shown on screen and gets projected during demos, so the
+        database password must not appear in it. The value passed to the
+        process itself is unaffected.
+        """
+        redacted = []
+        for arg in self.argv():
+            if arg.startswith("POSTGRES_PASSWORD="):
+                redacted.append("POSTGRES_PASSWORD=********")
+            else:
+                redacted.append(arg)
+        return " ".join(shlex.quote(a) for a in redacted)
 
 
 class Trainer(QObject):
