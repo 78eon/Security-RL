@@ -1,0 +1,15 @@
+{
+  "cve_database_hash": "c14575707519311e90a571e1b27d0bed16b2d10e41757f60a135ab8756137205",
+  "dependency_lock_hash": "d20c3cc2818f56d3",
+  "environment_config_hash": "08d7126571f4d0c3",
+  "frozen_at": "2026-08-13T13:21:47Z",
+  "git_commit": "0136eac7ffab5d8d15cf8a5f4e66ac76cbc78c16",
+  "ppo_config_hash": "220c48742b077c43",
+  "reward_config_hash": {
+    "shaped": "8aa4aee9074f423d",
+    "sparse": "1ffbeafeccc4662e"
+  },
+  "topology_config_hash": "2aa12404d40a23d0",
+  "topology_hash": "f875a25adf37ee34",
+  "topology_seed": 42
+}

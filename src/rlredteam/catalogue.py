@@ -12,11 +12,12 @@ there is no transcription step, so scores cannot drift from their source.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from rlredteam.cvss import Severity, severity_band, validate_base_score
+from rlredteam.cvss import Severity, parse_vector, severity_band, validate_base_score
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = REPO_ROOT / "data" / "cve_catalogue.sqlite"
@@ -64,6 +65,70 @@ class CVERecord:
 
 class CatalogueError(RuntimeError):
     """Raised when the catalogue is missing, malformed, or lacks an entry."""
+
+
+class ValidationError(CatalogueError):
+    """Raised when a CVE record fails validation (CP-09)."""
+
+
+# CVE-YYYY-NNNN.. with at least four sequence digits, per the CVE ID syntax.
+CVE_ID_RE = re.compile(r"^CVE-\d{4}-\d{4,}$")
+VALID_SEVERITIES = frozenset({"NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"})
+REQUIRED_FIELDS = (
+    "cve_id", "kind", "cvss_version", "base_score", "base_severity",
+    "vector", "source_url",
+)
+
+
+def validate_record(record: dict) -> dict:
+    """Validate one CVE record, or raise (CP-09).
+
+    A malformed record must be rejected loudly. Silently admitting one means a
+    reward term is computed from a score that was never checked, and nothing
+    downstream would reveal it.
+    """
+    missing = [f for f in REQUIRED_FIELDS if not record.get(f)]
+    if missing:
+        raise ValidationError(f"record missing required fields: {missing}")
+
+    cve_id = record["cve_id"]
+    if not CVE_ID_RE.match(str(cve_id)):
+        raise ValidationError(f"malformed CVE identifier: {cve_id!r}")
+
+    try:
+        score = validate_base_score(float(record["base_score"]))
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{cve_id}: invalid base score: {exc}") from exc
+
+    severity = str(record["base_severity"]).upper()
+    if severity not in VALID_SEVERITIES:
+        raise ValidationError(f"{cve_id}: unknown severity {severity!r}")
+
+    derived = severity_band(score)
+    if derived.value != severity:
+        raise ValidationError(
+            f"{cve_id}: severity {severity} disagrees with band({score}) = "
+            f"{derived.value} — one of the two is a transcription error"
+        )
+
+    if record["kind"] not in ("exploit", "privesc"):
+        raise ValidationError(f"{cve_id}: unknown kind {record['kind']!r}")
+
+    version = str(record["cvss_version"])
+    vector = str(record["vector"])
+    if not vector.startswith(f"CVSS:{version}/"):
+        raise ValidationError(
+            f"{cve_id}: vector {vector!r} does not match declared version {version}"
+        )
+    try:
+        parse_vector(vector)
+    except ValueError as exc:
+        raise ValidationError(f"{cve_id}: {exc}") from exc
+
+    if cve_id not in str(record["source_url"]):
+        raise ValidationError(f"{cve_id}: source_url does not reference this CVE")
+
+    return record
 
 
 _COLUMNS = (
@@ -162,15 +227,10 @@ def build(
         record = extract_v31(payload, cve_id)
         meta = TARGETS.get(cve_id, {})
 
-        score = validate_base_score(record["base_score"])
-        # NVD's own severity string must agree with the v3.1 band boundaries.
-        # A mismatch means either a bad response or a spec misunderstanding.
-        derived = severity_band(score)
-        if derived.value != record["base_severity"]:
-            raise CatalogueError(
-                f"{cve_id}: NVD severity {record['base_severity']} != "
-                f"band({score}) = {derived.value}"
-            )
+        candidate = dict(record)
+        candidate["kind"] = meta.get("kind", "exploit")
+        validate_record(candidate)
+        score = float(record["base_score"])
 
         rows.append(
             (

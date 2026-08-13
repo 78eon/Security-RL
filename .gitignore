@@ -39,3 +39,6 @@ htmlcov/
 # OS
 .directory
 .DS_Store
+
+# Packaged weight bundles — dual-use, released only by explicit decision (CP-31)
+dist/
