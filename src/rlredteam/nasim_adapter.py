@@ -198,6 +198,15 @@ class RewardWrapper(gym.Wrapper):
         # SB3 hands down a numpy int64, which fails that check. Coerce here so
         # any array-based caller works rather than pushing the burden upstream.
         action = int(action)
+        # CP-13. NASim indexes a Python list, so a negative index silently
+        # aliases a valid action from the other end -- action -1 executes the
+        # LAST action rather than failing. A bad index must be rejected, not
+        # quietly turned into a different move.
+        if not 0 <= action < int(self.action_space.n):
+            raise ValueError(
+                f"action {action} outside [0, {int(self.action_space.n)}) — "
+                "refusing to execute; a negative index would alias a valid action"
+            )
         obs, reward, done, step_limit_reached, info = self.env.step(action)
         event = self.adapter.build(
             action, reward, done, step_limit_reached, info, self._step
