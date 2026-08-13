@@ -10,7 +10,6 @@ is available. They deliberately do not need training to run.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess

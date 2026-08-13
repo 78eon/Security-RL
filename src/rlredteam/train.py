@@ -19,7 +19,7 @@ import json
 import os
 import random
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -28,11 +28,11 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+from rlredteam import provenance as provenance_mod
 from rlredteam.catalogue import CVECatalogue
 from rlredteam.events import AccessLevel
 from rlredteam.manifest import digest
 from rlredteam.nasim_adapter import RewardWrapper
-from rlredteam import provenance as provenance_mod
 from rlredteam.provenance import ExperimentManifest
 from rlredteam.reward import RewardConfig
 from rlredteam.topology import TopologyConfig, describe, make_env

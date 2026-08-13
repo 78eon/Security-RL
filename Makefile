@@ -40,7 +40,7 @@ test-one:       ## Run tests matching a name: make test-one T=farming
 	$(COMPOSE) run --rm app pytest -p no:cacheprovider -k "$(T)" -v -s
 
 lint:           ## Ruff
-	$(COMPOSE) run --rm app ruff check src gui tests tools scripts
+	$(COMPOSE) run --rm app ruff check --cache-dir /tmp/ruff src gui tests tools scripts
 
 catalogue:      ## Rebuild the frozen SQLite CVE catalogue from data/provenance/
 	$(COMPOSE) run --rm app python -m rlredteam.catalogue build
