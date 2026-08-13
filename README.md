@@ -15,25 +15,9 @@ production or third-party network is used, and no human subjects are involved.
 | Module 4 — PostgreSQL episode logger | done, tested |
 | Topology generator + NASim adapter + random rollout | done, tested |
 | PPO training loop (`src/rlredteam/train.py`) | done, trains and logs |
-| Evaluation n=10 | spec written (`docs/EVAL_SPEC.md`), awaiting runs |
+| Evaluation n=10 | protocol specified, runs not yet done |
 
-173 tests passing (fast suite plus 17 slow training tests), ruff clean.
-
-## Documentation
-
-**[`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md)** — start here. Plain-English explanation of
-what the system does, what every file contributes, how to run it, and the design decisions
-behind it. Written to be readable without opening the code.
-
-| Document | Purpose |
-|---|---|
-| `docs/PROJECT_GUIDE.md` | Full guide and user manual |
-| `docs/PPO_BRIEF.md` | Observation/action spaces, seeding, SB3 integration notes |
-| `docs/EVAL_SPEC.md` | Pre-registered n=10 evaluation protocol and results template |
-| `docs/FLOWCHART_SPEC.md` | Drawing spec for the baseline diagram |
-| `docs/report_snippets.md` | Draft text for the dissertation |
-| `docs/FRONTEND_PLAN.md` | PySide6 desktop app architecture and build order |
-| `docs/UI_DESIGN_BRIEF.md` | Self-contained brief for producing the UI/UX design |
+173 training tests plus 28 GUI tests, ruff clean.
 
 ## Quick start
 
@@ -44,6 +28,9 @@ make db-up                    # start PostgreSQL on :5433
 make test                     # full suite, including Postgres and NASim integration
 make rollout                  # deterministic random-policy rollout
 make train                    # 50k-step PPO pilot on the shaped reward
+
+make gui-build                # build the desktop app image (once)
+make gui                      # launch the analyst desktop app
 ```
 
 `make` auto-detects docker or podman.
@@ -88,9 +75,14 @@ src/rlredteam/
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
 
+gui/                 PySide6 desktop app — separate image, no torch or nasim
+  data/              repository + runs/ reader. No Qt import, tested headlessly
+  workers/           QThreadPool queries, QProcess trainer
+  views/             runs, results, replay, train
+  theme.py/.qss      design tokens; the stylesheet is generated from them
+
 configs/             topology.yaml, shaped.yaml, sparse.yaml
 data/                cve_catalogue.sqlite, its manifest, raw NVD provenance JSON
-docs/                PROJECT_GUIDE, PPO_BRIEF, EVAL_SPEC, FLOWCHART_SPEC, report_snippets
 scripts/             rollout_random.py, run_ablation.py (stub)
 tools/               fetch_nvd.py -- one-shot, online, never imported by training
 runs/                checkpoints and artefacts. GITIGNORED (see below).
@@ -114,7 +106,7 @@ environment. All environment-specific code lives in `nasim_adapter.py`.
 
 ## Known limitations
 
-Recorded in `docs/EVAL_SPEC.md`, summarised here:
+Stated plainly rather than discovered later:
 
 1. The `exfil` tactic bonus (+1.5) is **unreachable** — NASim has no exfiltration action.
    It is defined so its zero count is visible, pending a supervisor decision.
