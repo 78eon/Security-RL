@@ -156,8 +156,8 @@ def test_out_of_range_actions_are_rejected(wrapped, action: int) -> None:
 
 def test_state_survives_a_rejected_action(wrapped) -> None:
     """A rejected action must not corrupt the environment."""
-    obs_before, _ = wrapped.reset(seed=SEED)
-    with pytest.raises(Exception):
+    wrapped.reset(seed=SEED)
+    with pytest.raises(ValueError, match="outside"):
         wrapped.step(10**6)
     # The environment must still be usable and consistent afterwards.
     obs_after, reward, terminated, truncated, _ = wrapped.step(0)
