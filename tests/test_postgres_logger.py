@@ -91,6 +91,7 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 access_gained=1,
                 newly_discovered=1,
                 is_crown_jewel=s == steps - 1,
+                reward_paid=True,
             )
             for s in range(steps)
         ],

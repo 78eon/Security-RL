@@ -33,6 +33,7 @@ def step(index: int, **overrides) -> dict:
         "cve_id": None,
         "cvss_base": None,
         "is_crown_jewel": False,
+        "reward_paid": True,
         "tactic": "recon",
         "technique_id": "T1046",
         "error": None,
@@ -48,6 +49,7 @@ def test_attack_path_contains_only_observed_successful_progress() -> None:
         step(
             3,
             action="exploit_(1, 0)",
+            action_kind="exploit",
             newly_discovered=0,
             access_gained=1,
             cve_id="CVE-2021-42013",

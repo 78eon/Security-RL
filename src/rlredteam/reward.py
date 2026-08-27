@@ -219,13 +219,14 @@ class RewardEngine:
             # the two arms differ only in what is ADDED on top of it. Keying
             # sparse on goal_reached instead would change when the signal
             # arrives as well as its magnitude, confounding the ablation.
-            earned = event.success and event.is_crown_jewel
+            paid = self._is_payable(event)
+            earned = paid and not event.kind.is_scan and event.is_crown_jewel
             goal = self.config.sparse_goal_reward if earned else 0.0
             return RewardBreakdown(
                 total=goal,
                 native=event.native_reward,
                 crown_jewel=goal,
-                paid=earned,
+                paid=paid,
             )
 
         return self._score_shaped(event)
@@ -245,8 +246,16 @@ class RewardEngine:
                 tactic_name=tactic_name,
             )
 
-        crown = config.crown_jewel if event.is_crown_jewel else 0.0
         paid = self._is_payable(event)
+        # NASim reports the host's current access on later scans and exploits.
+        # A crown-jewel payment therefore requires this event to be an
+        # access-raising exploit/privesc, not merely a successful action on an
+        # already-compromised sensitive host.
+        crown = (
+            config.crown_jewel
+            if paid and not event.kind.is_scan and event.is_crown_jewel
+            else 0.0
+        )
 
         cve_term = 0.0
         weight = 0.0

@@ -46,6 +46,10 @@ Exploit and privilege-escalation shaping pays only when access rises
 `NONE → USER → ROOT`. The engine analytically checks that the total possible
 shaping is less than half the total crown-jewel value.
 
+The crown-jewel term uses the same access-rise gate. NASim reports a host's
+current access on later successful actions, so `access > NONE` alone is not an
+access gain and never triggers another crown-jewel payment.
+
 ## Native reward
 
 Native mode returns NASim reward verbatim. Every sparse and shaped transition

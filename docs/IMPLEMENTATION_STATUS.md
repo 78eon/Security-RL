@@ -37,7 +37,7 @@ realised topology hash (`f875a25adf37ee34`) in the column named
 | Paired statistics | `analyse.py`, `metrics.yaml` | PASS | analysis reads evaluation CSV; training CSV is used only for convergence; paired tests emit SD/median/effect/CI/warnings | final grid pending |
 | Figures | `reporting.py` | IMPLEMENTED | three plots are generated from evaluation metrics only | final grid pending |
 | Attack-path extraction | `reporting.py` | IMPLEMENTED | typed path model filters observed successful progress from evaluation steps, never topology | final grid pending |
-| Trajectory validation | `reporting.py` | IMPLEMENTED | detects loops, paid errors, repeated paid actions and high-return failures | inspect final generated report |
+| Trajectory validation | `reporting.py` | IMPLEMENTED | detects loops, paid errors, repeated paid actions and high-return failures; its first run exposed and drove a fix for repeated crown-jewel payment | inspect final regenerated report |
 | Results package | `runs/_analysis` | FAIL | existing artifacts trace to older commits and training outcomes | create `results/experiment_01/` from current clean commit |
 | Checkpoint gating | `.gitignore`, `release_weights.py` | PASS | weights under ignored `runs/`; explicit approval required for packaging | none |
 | GUI | `gui/` | OUT OF ESSENTIAL PATH | read-only backend snapshot | must not block experiment work |

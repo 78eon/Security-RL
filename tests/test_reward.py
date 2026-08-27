@@ -180,6 +180,28 @@ def test_sparse_pays_nothing_for_a_failed_crown_jewel_attempt() -> None:
     assert engine.score(exploit_event(crown=True, success=False)).total == 0.0
 
 
+@pytest.mark.parametrize("mode", [RewardMode.SPARSE, RewardMode.SHAPED])
+def test_crown_jewel_never_pays_again_without_new_access(mode: RewardMode) -> None:
+    engine = RewardEngine(RewardConfig(mode=mode))
+    first = engine.score(exploit_event(crown=True, access=AccessLevel.ROOT))
+    repeated = engine.score(exploit_event(crown=True, access=AccessLevel.ROOT))
+    later_scan = AttackEvent(
+        step=2,
+        kind=ActionKind.PROCESS_SCAN,
+        action_name="process_scan",
+        target=(1, 0),
+        success=True,
+        access_gained=AccessLevel.ROOT,
+        newly_discovered=1,
+        is_crown_jewel=True,
+    )
+    scanned = engine.score(later_scan)
+
+    assert first.crown_jewel > 0
+    assert repeated.crown_jewel == 0
+    assert scanned.crown_jewel == 0
+
+
 # -- native passthrough ----------------------------------------------------
 
 

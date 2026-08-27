@@ -252,6 +252,7 @@ class EpisodeCollector(BaseCallback):
                 access_gained=int(event.access_gained),
                 newly_discovered=event.newly_discovered,
                 is_crown_jewel=event.is_crown_jewel,
+                reward_paid=breakdown.paid,
                 error=event.error,
             )
             for idx, (event, breakdown) in enumerate(partial.step_rows)

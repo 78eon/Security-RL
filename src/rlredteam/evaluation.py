@@ -192,6 +192,7 @@ def evaluate_policy(
                     "access_gained": int(event.access_gained),
                     "newly_discovered": event.newly_discovered,
                     "is_crown_jewel": event.is_crown_jewel,
+                    "reward_paid": breakdown.paid,
                     "tactic": breakdown.tactic_name,
                     "technique_id": breakdown.technique_id,
                     "error": event.error,
@@ -335,6 +336,7 @@ def _step_record(step: dict):
         access_gained=int(step["access_gained"]),
         newly_discovered=int(step["newly_discovered"]),
         is_crown_jewel=bool(step["is_crown_jewel"]),
+        reward_paid=bool(step["reward_paid"]),
         error=step.get("error"),
     )
 

@@ -89,6 +89,7 @@ class StepRecord:
     access_gained: int = 0
     newly_discovered: int = 0
     is_crown_jewel: bool = False
+    reward_paid: bool = False
     error: str | None = None
 
 
@@ -314,8 +315,9 @@ class EpisodeLogger:
                             tactic, technique_id, target_subnet, target_host,
                             success, reward, native_reward, cve_id, cvss_base
                             , cve_term, tactic_term, crown_jewel_term, penalty_term,
-                            access_gained, newly_discovered, is_crown_jewel, error
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            access_gained, newly_discovered, is_crown_jewel,
+                            reward_paid, error
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         """,
                         [
                             (
@@ -339,6 +341,7 @@ class EpisodeLogger:
                                 s.access_gained,
                                 s.newly_discovered,
                                 s.is_crown_jewel,
+                                s.reward_paid,
                                 s.error,
                             )
                             for s in record.steps

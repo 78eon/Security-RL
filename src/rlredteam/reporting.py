@@ -50,7 +50,11 @@ def extract_attack_path(episode: dict, steps: list[dict]) -> AttackPath:
     for step in sorted(steps, key=lambda row: int(row["step"])):
         if not step["success"]:
             continue
-        if int(step.get("newly_discovered", 0)) <= 0 and int(step.get("access_gained", 0)) <= 0:
+        access_progress = (
+            bool(step.get("reward_paid"))
+            and step.get("action_kind") in {"exploit", "privesc"}
+        )
+        if int(step.get("newly_discovered", 0)) <= 0 and not access_progress:
             continue
         target = step.get("target")
         progress.append(
@@ -86,16 +90,18 @@ def validate_trajectory(episode: dict, steps: list[dict]) -> dict:
     longest_streak = 0
     current_streak = 0
     previous = None
-    seen: set[tuple[str, tuple]] = set()
+    paid_successes: set[tuple[str, tuple]] = set()
     repeated_paid = 0
     positive_errors = 0
     for row, key in zip(steps, actions, strict=True):
         current_streak = current_streak + 1 if key == previous else 1
         longest_streak = max(longest_streak, current_streak)
         previous = key
-        if key in seen and float(row["policy_reward"]) > 0:
+        paid_now = bool(row.get("reward_paid")) and float(row["policy_reward"]) > 0
+        if key in paid_successes and paid_now:
             repeated_paid += 1
-        seen.add(key)
+        if row.get("success") and paid_now:
+            paid_successes.add(key)
         if row.get("error") and float(row["policy_reward"]) > 0:
             positive_errors += 1
     return {
