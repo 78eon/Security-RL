@@ -1,9 +1,8 @@
 # Desktop GUI image — renders on the host display via X11 (XWayland works).
 #
-# Deliberately separate from the training image. The GUI never trains: it shells
-# out to `podman compose run app` for that, so it needs no torch, no nasim and
-# no stable-baselines3. If this image ever needs them, the process boundary has
-# been broken and training has leaked into the UI.
+# Deliberately separate from the training image. The GUI has no torch, NaSim or
+# stable-baselines3; blocking data access is delegated to Qt workers and real
+# training remains in the established training container.
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -35,17 +34,12 @@ RUN mkdir -p /usr/share/fonts/truetype/ibmplex && cd /usr/share/fonts/truetype/i
     && fc-cache -f >/dev/null \
     && fc-list | grep -ci "IBM Plex"
 
-# The Train view launches training on the host's container engine through the
-# rootless podman socket, so it needs the client binary. It never runs a nested
-# engine of its own -- the socket is the host user's, carrying that user's
-# privileges and no more.
-RUN apt-get update && apt-get install -y --no-install-recommends podman \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements-gui.txt ./
 RUN pip install --no-cache-dir -r requirements-gui.txt
 
 ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     QT_X11_NO_MITSHM=1 \
     QT_QPA_PLATFORM=xcb
 

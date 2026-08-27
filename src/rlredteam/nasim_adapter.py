@@ -43,7 +43,9 @@ class AdapterError(RuntimeError):
     pass
 
 
-def _access_level(raw: object) -> AccessLevel:
+def _access_level(
+    raw: object, target: tuple[int, int] | None = None
+) -> AccessLevel:
     """Normalise ``info["access"]`` to an AccessLevel.
 
     NASim's ActionResult docstring documents ``access`` as a dict of
@@ -56,7 +58,16 @@ def _access_level(raw: object) -> AccessLevel:
     if not raw:
         return AccessLevel.NONE
     if isinstance(raw, dict):
-        return AccessLevel(int(max(raw.values())))
+        if target is not None:
+            # Access belongs to the action's target. Taking max(raw.values())
+            # can incorrectly report ROOT on B merely because A was already
+            # root-compromised, corrupting reward and path reconstruction.
+            return AccessLevel(int(raw.get(target, AccessLevel.NONE)))
+        if len(raw) == 1:
+            return AccessLevel(int(next(iter(raw.values()))))
+        if len(raw) > 1:
+            raise AdapterError("target is required for a multi-host access mapping")
+        return AccessLevel.NONE
     return AccessLevel(int(raw))
 
 
@@ -125,7 +136,7 @@ class NASimEventAdapter:
         record = self.assignment.cve_for(action.name)
         success = bool(info.get("success", False))
 
-        access = _access_level(info.get("access"))
+        access = _access_level(info.get("access"), target)
 
         error = None
         for flag, label in (

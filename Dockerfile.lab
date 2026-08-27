@@ -1,0 +1,20 @@
+# Isolated-range evidence collector. It is intentionally unprivileged and
+# includes discovery tooling only—no exploit framework or attack payloads.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends nmap ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-lab.txt ./
+RUN pip install --no-cache-dir -r requirements-lab.txt
+
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin labrunner
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src
+
+USER 10001:10001
+CMD ["python", "scripts/lab_discover.py", "--help"]

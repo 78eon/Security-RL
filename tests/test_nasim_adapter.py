@@ -85,20 +85,28 @@ def test_crown_jewel_value_matches_locked_reward(config: TopologyConfig, seed: i
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("raw", "target", "expected"),
     [
-        (None, AccessLevel.NONE),
-        (0, AccessLevel.NONE),
-        (1, AccessLevel.USER),
-        (2, AccessLevel.ROOT),
-        ({}, AccessLevel.NONE),
-        ({(1, 0): 2}, AccessLevel.ROOT),
-        ({(1, 0): 1, (2, 0): 2}, AccessLevel.ROOT),
+        (None, (1, 0), AccessLevel.NONE),
+        (0, (1, 0), AccessLevel.NONE),
+        (1, (1, 0), AccessLevel.USER),
+        (2, (1, 0), AccessLevel.ROOT),
+        ({}, (1, 0), AccessLevel.NONE),
+        ({(1, 0): 2}, (1, 0), AccessLevel.ROOT),
+        ({(1, 0): 1, (2, 0): 2}, (1, 0), AccessLevel.USER),
+        ({(1, 0): 1, (2, 0): 2}, (3, 0), AccessLevel.NONE),
     ],
 )
-def test_access_level_handles_int_and_dict(raw: object, expected: AccessLevel) -> None:
-    """NASim documents `access` as a dict but passes an int; accept both."""
-    assert _access_level(raw) is expected
+def test_access_level_handles_int_and_targeted_dict(
+    raw: object, target: tuple[int, int], expected: AccessLevel
+) -> None:
+    """A mapping is resolved for the action target, never by global maximum."""
+    assert _access_level(raw, target) is expected
+
+
+def test_access_level_rejects_ambiguous_mapping_without_target() -> None:
+    with pytest.raises(AdapterError, match="target is required"):
+        _access_level({(1, 0): 1, (2, 0): 2})
 
 
 @pytest.mark.parametrize(

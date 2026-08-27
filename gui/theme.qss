@@ -1,253 +1,38 @@
-/* RLRedTeam analyst skin.
- *
- * Tokens of the form AT-NAME-AT are substituted by theme.build_stylesheet(),
- * so colours cannot drift between here and the code that paints charts and
- * graphics items, which QSS cannot reach.
- *
- * Flat by design: every border is 1px solid, corner radius is 0 everywhere, and
- * nothing relies on shadows, gradients or transforms -- all of which QSS either
- * cannot do or renders unreliably.
- */
-
-QWidget {
-    background: @WINDOW@;
-    color: @TEXT@;
-    font-family: "@FONT_SANS@";
-    font-size: @SIZE_BODY@px;
-}
-
-QMainWindow, QDialog { background: @WINDOW@; }
-
-/* -- nav rail ----------------------------------------------------------- */
-
-#navRail {
-    background: @PANEL@;
-    border-right: 1px solid @BORDER@;
-}
-#navRail QPushButton {
-    background: transparent;
-    border: 0;
-    border-left: 2px solid transparent;
-    padding: 9px 14px;
-    text-align: left;
-    color: @TEXT_SECONDARY@;
-    font-size: @SIZE_BODY@px;
-}
-#navRail QPushButton:hover { background: @SURFACE@; color: @TEXT@; }
-#navRail QPushButton:checked {
-    background: @SURFACE@;
-    border-left: 2px solid @ARM_1@;
-    color: @TEXT@;
-}
-
-#appTitle {
-    background: @PANEL@;
-    color: @TEXT_SECONDARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    padding: 10px 14px;
-    border-bottom: 1px solid @BORDER@;
-}
-
-/* -- panels ------------------------------------------------------------- */
-
-#surface { background: @SURFACE@; }
-#panel   { background: @PANEL@; border-left: 1px solid @BORDER@; }
-
-#viewTitle {
-    font-size: @SIZE_TITLE@px;
-    font-weight: 600;
-    color: @TEXT@;
-    background: transparent;
-}
-#viewSubtitle {
-    color: @TEXT_TERTIARY@;
-    font-size: @SIZE_SMALL@px;
-    background: transparent;
-}
-#panelHeading {
-    font-size: @SIZE_HEADING@px;
-    font-weight: 600;
-    color: @TEXT@;
-    background: transparent;
-}
-#sectionLabel {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    color: @TEXT_TERTIARY@;
-    background: transparent;
-}
-#mono, #monoValue {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_MONO@px;
-    color: @TEXT_BRIGHT@;
-    background: transparent;
-}
-#muted { color: @TEXT_SECONDARY@; background: transparent; }
-
-/* -- metric tile -------------------------------------------------------- */
-
-#metricTile {
-    background: @SURFACE@;
-    border: 1px solid @BORDER@;
-}
-#metricValue {
-    font-family: "@FONT_MONO@";
-    font-size: 27px;
-    font-weight: 500;
-    color: @TEXT@;
-    background: transparent;
-}
-#metricLabel {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    color: @TEXT_TERTIARY@;
-    background: transparent;
-}
-#metricDelta {
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    color: @TEXT_SECONDARY@;
-    background: transparent;
-}
-
-/* -- tables ------------------------------------------------------------- */
-
-QTableView {
-    background: @SURFACE@;
-    alternate-background-color: @SURFACE@;
-    gridline-color: @RULE@;
-    border: 1px solid @BORDER@;
-    selection-background-color: @SELECTION@;
-    selection-color: @TEXT@;
-    outline: 0;
-}
-QTableView::item { padding: 0px 10px; border-bottom: 1px solid @RULE@; }
-QTableView::item:selected { background: @SELECTION@; color: @TEXT@; }
-QTableView::item:hover { background: @HEADER@; }
-
-QHeaderView::section {
-    background: @HEADER@;
-    color: @TEXT_TERTIARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-    padding: 8px 10px;
-    border: 0;
-    border-bottom: 1px solid @BORDER@;
-    border-right: 1px solid @RULE@;
-}
-QTableView QTableCornerButton::section { background: @HEADER@; border: 0; }
-
-/* -- buttons ------------------------------------------------------------ */
-
-QPushButton {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 6px 12px;
-    color: @TEXT@;
-}
-QPushButton:hover { background: @RAISED@; }
-QPushButton:pressed { background: @PANEL@; }
-QPushButton:disabled { color: @TEXT_MUTED@; border-color: @BORDER@; }
-QPushButton[primary="true"] {
-    background: @PRIMARY_FILL@;
-    border: 1px solid @ARM_1@;
-    color: @ARM_1_LIGHT@;
-}
-QPushButton[primary="true"]:hover { background: #21385a; }
-QPushButton[danger="true"] {
-    background: #241519;
-    border: 1px solid @ERROR@;
-    color: @ERROR_TEXT@;
-}
-
-/* -- inputs ------------------------------------------------------------- */
-
-QLineEdit, QSpinBox, QComboBox {
-    background: @SURFACE@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 5px 8px;
-    color: @TEXT@;
-    selection-background-color: @ARM_1@;
-}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid @ARM_1@; }
-QComboBox::drop-down { border: 0; width: 18px; }
-QComboBox QAbstractItemView {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    selection-background-color: @SELECTION@;
-}
-QCheckBox { spacing: 7px; background: transparent; }
-QCheckBox::indicator {
-    width: 13px; height: 13px;
-    border: 1px solid @BORDER_STRONG@;
-    background: @SURFACE@;
-}
-QCheckBox::indicator:checked { background: @ARM_1@; border-color: @ARM_1@; }
-
-/* -- segmented toggle --------------------------------------------------- */
-/* Native is correct and default; shaped must feel deliberate, so the two
- * segments are visually asymmetric when shaped is active. */
-
-#segment QPushButton {
-    background: @SURFACE@;
-    border: 1px solid @BORDER_STRONG@;
-    padding: 5px 14px;
-    color: @TEXT_SECONDARY@;
-}
-#segment QPushButton:checked {
-    background: @PRIMARY_FILL@;
-    border-color: @ARM_1@;
-    color: @ARM_1_LIGHT@;
-}
-#segment QPushButton[warnState="true"]:checked {
-    background: @TINT_WARN@;
-    border-color: @WARN@;
-    color: @WARN_TEXT@;
-}
-
-/* -- log ---------------------------------------------------------------- */
-
-QPlainTextEdit {
-    background: @PANEL@;
-    border: 1px solid @BORDER@;
-    color: @TEXT_SECONDARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_SMALL@px;
-    selection-background-color: @SELECTION@;
-}
-
-/* -- misc --------------------------------------------------------------- */
-
-QSplitter::handle { background: @BORDER@; width: 1px; }
-QStatusBar {
-    background: @PANEL@;
-    border-top: 1px solid @BORDER@;
-    color: @TEXT_TERTIARY@;
-    font-family: "@FONT_MONO@";
-    font-size: @SIZE_LABEL@px;
-}
-QStatusBar::item { border: 0; }
-
-QScrollBar:vertical { background: @WINDOW@; width: 11px; margin: 0; }
-QScrollBar::handle:vertical { background: @BORDER_STRONG@; min-height: 24px; }
-QScrollBar::handle:vertical:hover { background: @BORDER_SOFT@; }
-QScrollBar:horizontal { background: @WINDOW@; height: 11px; margin: 0; }
-QScrollBar::handle:horizontal { background: @BORDER_STRONG@; min-width: 24px; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-
-QToolTip {
-    background: @HEADER@;
-    border: 1px solid @BORDER_STRONG@;
-    color: @TEXT@;
-    padding: 4px 7px;
-}
-
-QProgressBar {
-    background: @SURFACE@;
-    border: 1px solid @BORDER@;
-    height: 6px;
-    text-align: center;
-}
-QProgressBar::chunk { background: @ARM_1@; }
+* { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; font-size: 12px; color: #e8f0f1; }
+QWidget, QMainWindow, QWidget#Root { background: #071013; }
+QFrame#Sidebar { background: #071114; border-right: 1px solid #17262b; }
+QLabel#Brand { font-size: 15px; font-weight: 700; letter-spacing: 2px; color: #e8f0f1; }
+QLabel#BrandSub, QLabel#Eyebrow, QLabel#Muted, QLabel#MetricLabel { color: #60787e; }
+QLabel#Eyebrow, QLabel#MetricLabel { font-size: 9px; letter-spacing: 2px; }
+QLabel#PageTitle { font-size: 23px; font-weight: 650; }
+QLabel#SectionTitle { font-size: 13px; font-weight: 650; }
+QPushButton#Nav { text-align: left; border: 0; border-radius: 6px; padding: 11px 12px; color: #789096; background: transparent; }
+QPushButton#Nav:hover { background: #0e2024; color: #dce9eb; }
+QPushButton#Nav:checked { background: #0e2024; color: #48dbe2; border-left: 2px solid #48dbe2; }
+QPushButton#Primary, QPushButton#Action { border: 1px solid #2c6668; border-radius: 5px; padding: 8px 13px; background: #123035; color: #8ce6e9; }
+QPushButton#Action { border-color: #21373c; background: #0c191d; color: #91a7aa; }
+QPushButton#Primary:hover, QPushButton#Action:hover { border-color: #48dbe2; color: #e8f0f1; }
+QFrame#Panel, QFrame#Metric, QFrame#CampaignCard { background: #0a1619; border: 1px solid #1c3035; border-radius: 7px; }
+QFrame#Metric { background: #0d1b1f; }
+QLabel#MetricValue { font-family: "IBM Plex Mono", "Consolas", monospace; font-size: 26px; font-weight: 650; color: #48dbe2; }
+QLabel#MetricGood { font-family: "IBM Plex Mono", "Consolas", monospace; font-size: 26px; font-weight: 650; color: #b7f04a; }
+QLabel#MetricWarn { font-family: "IBM Plex Mono", "Consolas", monospace; font-size: 26px; font-weight: 650; color: #ffba52; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { min-height: 32px; border: 1px solid #20363b; border-radius: 4px; background: #091416; padding: 0 9px; selection-background-color: #20575b; }
+QComboBox::drop-down { border: 0; width: 22px; }
+QProgressBar { height: 5px; border: 0; background: #172d31; text-align: center; color: transparent; }
+QProgressBar::chunk { background: #48dbe2; }
+QTableWidget { border: 0; background: #0a1619; alternate-background-color: #0d1b1f; gridline-color: #172b30; selection-background-color: #133138; }
+QHeaderView::section { background: #0b171b; color: #647d82; border: 0; border-bottom: 1px solid #1c3035; padding: 9px; font-size: 9px; }
+QTableWidget::item { padding: 8px; border-bottom: 1px solid #14272b; }
+QTabWidget::pane { border: 0; } QTabBar::tab { padding: 8px 13px; color: #647c81; background: #091316; border: 1px solid #1d3035; }
+QTabBar::tab:selected { background: #173036; color: #48dbe2; }
+QScrollArea, QScrollArea > QWidget > QWidget { border: 0; background: #071013; }
+QScrollBar:vertical { background: #081316; width: 8px; }
+QScrollBar::handle:vertical { background: #20363b; border-radius: 4px; min-height: 30px; }
+QGroupBox { border: 1px solid #1c3035; border-radius: 6px; margin-top: 12px; padding-top: 12px; font-weight: 650; }
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #b9c7c9; }
+QCheckBox { spacing: 8px; } QCheckBox::indicator { width: 28px; height: 15px; border-radius: 8px; background: #23353a; }
+QCheckBox::indicator:checked { background: #48dbe2; }
+QTextEdit, QPlainTextEdit { border: 1px solid #1c3035; background: #081316; color: #9ecbd0; font-family: "IBM Plex Mono", "Consolas", monospace; }
+QStatusBar { background: #071013; border-top: 1px solid #14262a; color: #60787e; }
+QToolTip { background: #112426; color: #e8f0f1; border: 1px solid #285150; }

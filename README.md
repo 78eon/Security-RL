@@ -3,21 +3,16 @@
 Simulation-only reinforcement learning agent for attack-path discovery on randomised
 enterprise topologies, with a CVE/CVSS-severity-weighted reward.
 
-MSc dissertation project (CT7P01NI). **Essential tier.** Simulation only — no live,
-production or third-party network is used, and no human subjects are involved.
+The repository now includes a typed enterprise simulator covering network segments, hosts,
+services, applications, APIs, identities, databases, cloud resources, security controls and
+data assets. Its Nmap/OpenVAS-like actions are offline graph-state transitions, never live
+scanning. See [the enterprise environment guide](docs/ENTERPRISE_ENVIRONMENT.md).
 
-## Status
+An unprivileged, scope-gated backend is also provided for evidence collection in an explicitly
+authorized isolated hybrid lab. It performs conservative discovery and imports Greenbone
+reports; it does not autonomously exploit systems. See
+[the hybrid lab runbook](docs/HYBRID_LAB_RUNBOOK.md).
 
-| Component | State |
-|---|---|
-| Module 0 — frozen CVE catalogue (SQLite + SHA-256 manifest) | done, tested |
-| Reward core — CVE/CVSS × weight + tactic bonus, sparse toggle | done, tested |
-| Module 4 — PostgreSQL episode logger | done, tested |
-| Topology generator + NASim adapter + random rollout | done, tested |
-| PPO training loop (`src/rlredteam/train.py`) | done, trains and logs |
-| Evaluation n=10 | protocol specified, runs not yet done |
-
-173 training tests plus 28 GUI tests, ruff clean.
 
 ## Quick start
 
@@ -27,13 +22,22 @@ make build                    # build the training image
 make db-up                    # start PostgreSQL on :5433
 make test                     # full suite, including Postgres and NASim integration
 make rollout                  # deterministic random-policy rollout
+make enterprise-demo          # typed discovery-to-crown-jewel demonstration
+make lab-build                # build isolated-range evidence collector
 make train                    # 50k-step PPO pilot on the shaped reward
 
 make gui-build                # build the desktop app image (once)
 make gui                      # launch the analyst desktop app
 ```
 
-`make` auto-detects docker or podman.
+All installation, testing and application launch commands use Podman. No Python or Qt
+packages need to be installed on the host.
+
+The desktop console is backend-driven. It reads stored execution steps and experiments
+from PostgreSQL, run summaries and configuration snapshots from `runs/`, and the frozen
+CVE catalogue from SQLite. If PostgreSQL is unavailable it clearly switches to artefact
+mode. Completed runs are read-only: campaign controls and configuration writes are not
+shown until a real scheduler or configuration service exists.
 
 ## Reproducing the environment
 
@@ -75,11 +79,12 @@ src/rlredteam/
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
 
-gui/                 PySide6 desktop app — separate image, no torch or nasim
-  data/              repository + runs/ reader. No Qt import, tested headlessly
-  workers/           QThreadPool queries, QProcess trainer
-  views/             runs, results, replay, train
-  theme.py/.qss      design tokens; the stylesheet is generated from them
+gui/                 Native PySide6 research console — separate Podman image
+  backend.py         typed snapshot adapter for database and persisted artefacts
+  data/              PostgreSQL repository + runs/ reader; no Qt imports
+  workers/           QThreadPool queries and isolated Qt training facade
+  views/             eight-workspace research console and stable main window
+  theme.py/.qss      desktop design tokens and supplied dark visual system
 
 configs/             topology.yaml, shaped.yaml, sparse.yaml
 data/                cve_catalogue.sqlite, its manifest, raw NVD provenance JSON

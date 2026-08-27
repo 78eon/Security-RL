@@ -10,43 +10,43 @@ from __future__ import annotations
 from pathlib import Path
 
 # -- surfaces ---------------------------------------------------------------
-WINDOW = "#0d1013"  # window backdrop
-SURFACE = "#14181d"  # base surface
-PANEL = "#11151a"  # rail, side panel, footer
-HEADER = "#1b2027"  # header row, button face
-RAISED = "#1e242c"  # hover step above HEADER
+WINDOW = "#071013"  # window backdrop
+SURFACE = "#0b171b"  # base surface
+PANEL = "#071114"  # rail, side panel, footer
+HEADER = "#0e2024"  # header row, button face
+RAISED = "#123035"  # hover step above HEADER
 
 # -- lines ------------------------------------------------------------------
-BORDER = "#2b313b"  # outer borders
-RULE = "#22272f"  # inner rules between rows
-BORDER_STRONG = "#333a45"  # button border
-BORDER_SOFT = "#3b424d"
+BORDER = "#1c3035"  # outer borders
+RULE = "#14282c"  # inner rules between rows
+BORDER_STRONG = "#21373c"  # button border
+BORDER_SOFT = "#2c555b"
 
 # -- text -------------------------------------------------------------------
-TEXT = "#e6e9ee"  # primary
-TEXT_BRIGHT = "#d3d9e2"
-TEXT_SECONDARY = "#8d96a5"
-TEXT_TERTIARY = "#7d8797"  # contrast floor on SURFACE (4.6:1)
-TEXT_MUTED = "#6b7482"
+TEXT = "#e8f0f1"  # primary
+TEXT_BRIGHT = "#d6e3e5"
+TEXT_SECONDARY = "#72888e"
+TEXT_TERTIARY = "#668086"
+TEXT_MUTED = "#526b71"
 
 # -- series -----------------------------------------------------------------
 # Fixed and validated colourblind-safe (CVD separation dE 24.7). ARM_2 is a
 # series colour ONLY -- never a UI accent, or a chart legend stops being
 # distinguishable from a button.
-ARM_1 = "#2a78d6"  # sparse / native, also selection + primary action
+ARM_1 = "#48dbe2"  # sparse / native, also selection + primary action
 ARM_2 = "#eb6834"  # shaped
-ARM_1_LIGHT = "#8dbcf0"
+ARM_1_LIGHT = "#86e3e5"
 ARM_2_LIGHT = "#f0a184"
 SELECTION = "#1a2530"  # selected row fill -- not a blue wash
 PRIMARY_FILL = "#1a2c42"  # primary button face
 
 # -- state ------------------------------------------------------------------
-OK = "#3f9e5a"
-OK_TEXT = "#8fd0a3"
-WARN = "#d9962b"
-WARN_TEXT = "#e8c48f"
-ERROR = "#b0242c"
-ERROR_TEXT = "#e79a9a"
+OK = "#b7f04a"
+OK_TEXT = "#b7f04a"
+WARN = "#ffba52"
+WARN_TEXT = "#ffba52"
+ERROR = "#ff6174"
+ERROR_TEXT = "#ff8190"
 
 TINT_OK = "#131820"
 TINT_WARN = "#2a1f16"

@@ -1,0 +1,4 @@
+# Lightweight live-evidence image: no torch, PPO, NASim, Qt or exploit tools.
+gymnasium==1.0.0
+numpy==2.1.3
+pyyaml==6.0.2

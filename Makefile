@@ -1,13 +1,12 @@
-.PHONY: help build gui gui-build gui-test test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout train train-sparse catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo train train-sparse catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 # The container has only a partial checkout, so dirtiness is decided here.
 export RLREDTEAM_GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo 1 || echo 0)
 
-# This machine runs podman; CI or another machine may have docker. Auto-detect
-# rather than hardcode, so `make test` works either way.
-COMPOSE := $(shell command -v docker >/dev/null 2>&1 && echo "docker compose" || echo "podman compose")
+# Podman is the sole supported container runtime for this project.
+COMPOSE := podman compose
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -63,7 +62,7 @@ train-sparse:   ## Same pilot on the sparse baseline
 gui-build:      ## Build the desktop GUI image (separate from training)
 	podman build -t rlredteam-gui -f Dockerfile.gui .
 
-gui:            ## Launch the analyst desktop app on the host display
+gui:             ## Launch the native containerized research console
 	@test -f .env || { echo "no .env — copy .env.example and set credentials"; exit 1; }
 	xhost +local: >/dev/null 2>&1 || true
 	set -a; . ./.env; set +a; \
@@ -71,18 +70,47 @@ gui:            ## Launch the analyst desktop app on the host display
 		-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
 		-e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5433 \
 		-e RLREDTEAM_HOST_REPO="$$PWD" \
-		-e CONTAINER_HOST="unix:///run/podman/podman.sock" \
-		-e RLREDTEAM_NETWORK="sourcecode_rlredteam-internal" \
-		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-		-v "$$XDG_RUNTIME_DIR/podman/podman.sock:/run/podman/podman.sock:z" \
-		-v "$$PWD:/app:z" -w /app --net=host rlredteam-gui python -m gui
+	-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+	-v "$$PWD:/app:ro,z" -w /app --net=host rlredteam-gui python -m gui
 
-gui-test:       ## Headless tests for the GUI data layer
-	podman run --rm -v "$$PWD:/app:z" -w /app rlredteam-gui \
-		sh -c "pip install -q pytest && python -m pytest tests/test_gui_data.py -q -p no:cacheprovider"
+gui-test:       ## Headless tests for the desktop GUI and adapter
+	podman run --rm -e QT_QPA_PLATFORM=offscreen \
+		-v "$$PWD:/app:ro,z" -w /app rlredteam-gui \
+		python -m pytest tests/test_gui*.py -q -p no:cacheprovider
+
+lab-build:      ## Build the unprivileged isolated-range discovery image
+	podman build -t rlredteam-lab -f Dockerfile.lab .
+
+lab-plan:       ## Dry-run a scoped scan: make lab-plan T=10.250.0.10 P=host_discovery
+	@test -n "$(T)" || { echo "set T to an authorized private IP/CIDR"; exit 1; }
+	podman run --rm --cap-drop=all --security-opt=no-new-privileges \
+		-v "$$PWD:/app:ro,z" -w /app rlredteam-lab \
+		python scripts/lab_discover.py --config configs/lab_scope.yaml \
+		--target "$(T)" --profile "$(or $(P),host_discovery)"
+
+lab-scan:       ## Authorized live scan; set T, P and A (authorization ID)
+	@test -n "$(T)" -a -n "$(A)" || { echo "set T and authorization A"; exit 1; }
+	podman run --rm --network host --cap-drop=all --security-opt=no-new-privileges \
+		-v "$$PWD:/app:ro,z" -w /app rlredteam-lab \
+		python scripts/lab_discover.py --config configs/lab_scope.yaml \
+		--target "$(T)" --profile "$(or $(P),host_discovery)" \
+		--execute --authorization "$(A)"
 
 rollout:        ## Deterministic random-policy rollout on the frozen topology
 	$(COMPOSE) run --rm app python scripts/rollout_random.py --seed 42
+
+enterprise-demo: ## Typed enterprise discovery and attack-path demonstration
+	$(COMPOSE) run --rm app python scripts/enterprise_demo.py --seed 42
+
+hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
+	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3
+
+hybrid-train:   ## Train PPO across hybrid simulation seeds 1-60
+	$(COMPOSE) run --rm app python scripts/train_hybrid.py --seed 42 --timesteps 50000
+
+hybrid-eval:    ## Evaluate frozen hybrid PPO on held-out seeds 2001-2020
+	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py \
+		--model runs/hybrid-ppo/model-seed-42.zip --split test
 
 clean:
 	find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true

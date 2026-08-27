@@ -1,5 +1,6 @@
 # Secrets — NVD API key lives here, never committed
 .env
+configs/lab_scope.yaml
 
 # Project documentation and dissertation drafts are kept local, not published.
 # Contains supervision notes and draft report text.
@@ -22,6 +23,7 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-*/
 venv/
 
 # Test / tooling

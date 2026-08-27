@@ -1,0 +1,10 @@
+# Copy to configs/lab_scope.yaml and replace these values only after the
+# isolated range owner has approved the exact subnet in writing.
+authorization_id: "CHANGE-ME-RANGE-AUTHORIZATION"
+allowed_networks:
+  - "10.250.0.0/24"
+max_addresses: 256
+
+# Keep false for command planning and parser demonstrations. A live scan also
+# requires --execute and an exact --authorization value on every invocation.
+execution_enabled: false
