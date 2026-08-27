@@ -4,9 +4,9 @@
   "environment_config_hash": "08d7126571f4d0c3",
   "experiment_config_sha256": "c2b99c3afa108f2cb2bf81372146eecabaaa005ddc48dbe2c4b8af917dd1917e",
   "experiment_id": "experiment_01",
-  "frozen_at": "2026-08-27T10:20:31Z",
+  "frozen_at": "2026-08-27T10:43:52Z",
   "ppo_config_hash": "220c48742b077c43",
-  "preregistered_from_commit": "55f51cb21c7867a208059f5d0bf97e19d75b6919",
+  "preregistered_from_commit": "e7ef56829ba0cdd6712f700939dff092c2f5c956",
   "reward_config_hash": {
     "shaped": "8aa4aee9074f423d",
     "sparse": "1ffbeafeccc4662e"
