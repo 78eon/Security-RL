@@ -1,0 +1,4 @@
+runtime image repository digest: sha256:48cf3bb65bc2ef45d350165d972c975e970a89548f0c802c520dd91b3f46d221
+runtime local image id: 6e93cb04af67f9ef0c970fd065c53044ce424284228efe8906ddfc50f22c757d
+method: post-run read-only `podman image inspect localhost/sourcecode_app:latest`
+note: the per-run environment variable was unset; this attestation records the inspected image used by Podman for the run.

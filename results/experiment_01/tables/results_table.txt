@@ -1,0 +1,17 @@
+metric                        sparse      shaped           Δ        t         p    p_bonf       d
+-------------------------------------------------------------------------------------------------
+native_return                -98.340    -188.900     -90.560    -1.82    0.1015    0.5076   -0.58
+native_return_std            127.216     162.401      35.185     1.12    0.2934    1.0000    0.35
+success_rate                   1.000       1.000       0.000      nan       nan    1.0000       —
+steps_to_goal                131.050     177.370      46.320     2.21    0.0540    0.2701    0.70
+mean_cvss_exploited            7.986       7.988       0.002     0.02    0.9829    1.0000    0.01
+native_return_median         -78.700    -167.050     -88.350    -1.72    0.1203         —   -0.54
+median_steps_to_goal         123.800     167.000      43.200     1.99    0.0778         —    0.63
+hvt_hit_rate                   0.680       0.740       0.060     0.67    0.5203         —    0.21
+max_cvss_exploited             9.800       9.800       0.000      nan       nan         —       —
+hosts_compromised              5.700       5.910       0.210     2.07    0.0687         —    0.65
+discovered_hosts              59.520      58.640      -0.880    -0.24    0.8181         —   -0.07
+tactic_coverage                0.000       1.000       1.000      inf    0.0000         —       —
+total_shaped_return            2.530    -411.991    -414.521    -4.80    0.0010         —   -1.52
+
+NOT CONVERGED: experiment_01-sparse-s42-t42, experiment_01-sparse-s43-t42, experiment_01-sparse-s44-t42, experiment_01-sparse-s45-t42, experiment_01-sparse-s46-t42, experiment_01-sparse-s47-t42, experiment_01-sparse-s48-t42, experiment_01-sparse-s49-t42, experiment_01-sparse-s50-t42, experiment_01-sparse-s51-t42, experiment_01-shaped-s42-t42, experiment_01-shaped-s43-t42, experiment_01-shaped-s44-t42, experiment_01-shaped-s45-t42, experiment_01-shaped-s46-t42, experiment_01-shaped-s47-t42, experiment_01-shaped-s48-t42, experiment_01-shaped-s49-t42, experiment_01-shaped-s50-t42, experiment_01-shaped-s51-t42

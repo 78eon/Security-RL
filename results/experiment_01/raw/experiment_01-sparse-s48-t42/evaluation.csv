@@ -1,0 +1,11 @@
+run_name,reward_mode,training_seed,evaluation_seed,topology_seed,goal_reached,terminal_reason,length,native_return,policy_return,hosts_compromised,discovered_hosts,mean_cvss_exploited,max_cvss_exploited,high_value_target_hit,distinct_actions,repeated_actions,tactics,techniques
+experiment_01-sparse-s48-t42,sparse,48,1001,42,True,goal,221,-318.0,2.0,7,56,8.414285714285715,9.8,True,15,29,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1002,42,True,goal,131,-84.0,3.0,5,64,8.66,9.8,True,15,13,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1003,42,True,goal,36,124.0,3.0,5,24,7.220000000000001,8.1,False,13,3,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1004,42,True,goal,174,-199.0,2.0,5,88,8.219999999999999,9.8,True,15,12,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1005,42,True,goal,80,17.0,2.0,6,56,7.266666666666667,8.1,False,15,6,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1006,42,True,goal,149,-145.0,3.0,7,80,8.085714285714285,9.8,True,15,11,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1007,42,True,goal,90,1.0,3.0,4,32,7.824999999999999,9.8,True,15,11,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1008,42,True,goal,92,2.0,3.0,6,24,8.183333333333332,9.8,True,14,11,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1009,42,True,goal,153,-150.0,3.0,7,72,8.085714285714285,9.8,True,15,13,[],[]
+experiment_01-sparse-s48-t42,sparse,48,1010,42,True,goal,173,-206.0,3.0,6,64,8.566666666666665,9.8,True,15,22,[],[]

@@ -1,0 +1,522 @@
+[
+  {
+    "evaluation_seed": 1001,
+    "goal_reached": true,
+    "native_return": -307.0,
+    "policy_return": 2.0,
+    "progress_steps": [
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 66,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 101,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_1_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2014-0160",
+        "cvss_base": 7.5,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 108,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 118,
+        "tactic": null,
+        "target": [
+          3,
+          2
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": true,
+        "newly_discovered": 0,
+        "step": 124,
+        "tactic": null,
+        "target": [
+          2,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_1_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2014-0160",
+        "cvss_base": 7.5,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 134,
+        "tactic": null,
+        "target": [
+          3,
+          4
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_4_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2021-42013",
+        "cvss_base": 9.8,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 144,
+        "tactic": null,
+        "target": [
+          3,
+          3
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 152,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_1",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2018-15473",
+        "cvss_base": 5.3,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 156,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 176,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 181,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 184,
+        "tactic": null,
+        "target": [
+          3,
+          4
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 196,
+        "tactic": null,
+        "target": [
+          3,
+          4
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 202,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 208,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 209,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": true,
+        "newly_discovered": 0,
+        "step": 213,
+        "tactic": null,
+        "target": [
+          4,
+          0
+        ],
+        "technique_id": null
+      }
+    ],
+    "reward_mode": "sparse",
+    "run_name": "experiment_01-sparse-s42-t42",
+    "terminal_reason": "goal",
+    "training_seed": 42
+  },
+  {
+    "evaluation_seed": 1002,
+    "goal_reached": true,
+    "native_return": -84.0,
+    "policy_return": 3.0,
+    "progress_steps": [
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 39,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 59,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_1_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2014-0160",
+        "cvss_base": 7.5,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 63,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 69,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_1_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2014-0160",
+        "cvss_base": 7.5,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 75,
+        "tactic": null,
+        "target": [
+          3,
+          4
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_3",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2024-6387",
+        "cvss_base": 8.1,
+        "is_crown_jewel": true,
+        "newly_discovered": 0,
+        "step": 76,
+        "tactic": null,
+        "target": [
+          2,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 93,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 94,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 97,
+        "tactic": null,
+        "target": [
+          3,
+          4
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 1,
+        "action": "e_srv_1_os_0",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2014-0160",
+        "cvss_base": 7.5,
+        "is_crown_jewel": true,
+        "newly_discovered": 0,
+        "step": 105,
+        "tactic": null,
+        "target": [
+          4,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_1",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2018-15473",
+        "cvss_base": 5.3,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 109,
+        "tactic": null,
+        "target": [
+          3,
+          2
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 0,
+        "action": "subnet_scan",
+        "action_kind": "subnet_scan",
+        "cve_id": null,
+        "cvss_base": null,
+        "is_crown_jewel": false,
+        "newly_discovered": 8,
+        "step": 112,
+        "tactic": null,
+        "target": [
+          1,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_1",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2018-15473",
+        "cvss_base": 5.3,
+        "is_crown_jewel": false,
+        "newly_discovered": 0,
+        "step": 115,
+        "tactic": null,
+        "target": [
+          3,
+          0
+        ],
+        "technique_id": null
+      },
+      {
+        "access_gained": 2,
+        "action": "e_srv_1",
+        "action_kind": "exploit",
+        "cve_id": "CVE-2018-15473",
+        "cvss_base": 5.3,
+        "is_crown_jewel": true,
+        "newly_discovered": 0,
+        "step": 124,
+        "tactic": null,
+        "target": [
+          4,
+          0
+        ],
+        "technique_id": null
+      }
+    ],
+    "reward_mode": "sparse",
+    "run_name": "experiment_01-sparse-s42-t42",
+    "terminal_reason": "goal",
+    "training_seed": 42
+  }
+]
