@@ -179,6 +179,49 @@ def test_experiment_reconstructs_run_episode_and_attributed_steps(
     assert rows[-1][11] is True
 
 
+def test_evaluation_run_attaches_to_training_experiment(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0))
+    logger.flush()
+    with EpisodeLogger.start(
+        name="pytest-synthetic",
+        reward_mode="shaped",
+        config_hash="cfg-deadbeef",
+        topology_config_hash="topo-cafe",
+        cve_manifest_sha256="manifest-1234",
+        seed_set=[42],
+        conninfo=conninfo,
+        designation="evaluation",
+        evaluation_seeds=[1001],
+        checkpoint_path="runs/model.zip",
+        experiment_id=logger.experiment_id,
+        batch_size=1,
+    ) as evaluation:
+        record = make_episode(0)
+        record.seed = 1001
+        evaluation.log_episode(record)
+
+    with psycopg.connect(conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT r.designation, r.status, r.evaluation_seeds, ep.seed,
+                   ep.terminal_state, count(s.id)
+            FROM runs r
+            JOIN episodes ep ON ep.run_id = r.id
+            JOIN steps s ON s.episode_id = ep.id
+            WHERE r.experiment_id = %s
+            GROUP BY r.id, ep.id
+            ORDER BY r.designation DESC
+            """,
+            (logger.experiment_id,),
+        ).fetchall()
+
+    assert rows[0][:5] == ("training", "running", [], 42, "goal")
+    assert rows[1][:5] == ("evaluation", "complete", [1001], 1001, "goal")
+    assert rows[1][5] == 3
+
+
 def test_batching_defers_writes_until_threshold(logger: EpisodeLogger) -> None:
     logger.log_episode(make_episode(0))
     assert logger.episode_count() == 0, "should still be buffered"

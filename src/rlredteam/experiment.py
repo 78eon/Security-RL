@@ -18,6 +18,7 @@ from rlredteam.analyse import RunMetrics, analyse, format_table, load_protocol, 
 from rlredteam.catalogue import CVECatalogue
 from rlredteam.evaluation import evaluate_checkpoint, sha256_file
 from rlredteam.manifest import digest
+from rlredteam.reporting import write_figures, write_trajectory_evidence
 from rlredteam.reward import RewardConfig
 from rlredteam.topology import TopologyConfig, describe, make_env
 from rlredteam.train import PPO_DEFAULTS
@@ -169,6 +170,7 @@ def evaluate_run(config: ExperimentConfig, arm: str, seed: int, result_root: Pat
         RUNS_DIR / name,
         list(config.evaluation_seeds),
         result_root / "raw" / name,
+        postgres=config.postgres,
     )
 
 
@@ -242,17 +244,21 @@ def write_results(
 ) -> dict:
     protocol = load_protocol(config.metrics)
     report = analyse(metrics, protocol)
-    for folder in ("metadata", "summaries", "tables"):
+    for folder in ("metadata", "summaries", "tables", "figures", "trajectories"):
         (result_root / folder).mkdir(parents=True, exist_ok=True)
     (result_root / "summaries" / "analysis.json").write_text(
         json.dumps(report, indent=2, sort_keys=True)
     )
     (result_root / "tables" / "results_table.txt").write_text(format_table(report) + "\n")
     _write_csv(
-        result_root / "tables" / "per_run_metrics.csv",
+        result_root / "summaries" / "metrics.csv",
         [run.to_dict() for run in metrics],
     )
     _write_csv(result_root / "tables" / "statistics.csv", report["comparisons"])
+    _write_csv(
+        result_root / "tables" / f"{config.experiment_id}_results.csv",
+        [run.to_dict() for run in metrics],
+    )
     manifests = []
     for arm in config.arms:
         for seed in config.training_seeds:
@@ -283,6 +289,17 @@ def write_results(
     (result_root / "metadata" / "experiment.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True, default=list)
     )
+    hash_files = {
+        "config_hash.txt": config.digest(),
+        "topology_hash.txt": frozen["topology_hash"],
+        "cve_snapshot_hash.txt": frozen["cve_manifest_sha256"],
+        "code_commit.txt": provenance.git_commit() or "unknown",
+    }
+    for filename, value in hash_files.items():
+        (result_root / "metadata" / filename).write_text(str(value) + "\n")
+    write_figures(metrics, result_root / "figures")
+    write_trajectory_evidence(config, result_root)
+    _write_readme(config, result_root, report)
     return report
 
 
@@ -301,6 +318,29 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
                     for key, value in row.items()
                 }
             )
+
+
+def _write_readme(config: ExperimentConfig, result_root: Path, report: dict) -> None:
+    content = f"""# {config.experiment_id}
+
+This package was generated from dedicated frozen-policy evaluation, not from
+training returns. It compares sparse and shaped PPO across
+{len(config.training_seeds)} matched training seeds on topology seed
+{config.topology_seed}, with {len(config.evaluation_seeds)} held-out episode
+seeds per checkpoint. Policy parameters are hashed before and after evaluation;
+no gradient updates occur.
+
+- `metadata/`: exact code, configuration, topology, CVE and checkpoint provenance
+- `raw/`: evaluation episodes and step-level evidence for every checkpoint
+- `summaries/`: analysis JSON and per-run metrics
+- `tables/`: paired statistical comparisons and dissertation-ready CSV
+- `figures/`: plots generated only from evaluation outcomes
+- `trajectories/`: trace-derived attack paths, examples and validation findings
+
+Analysis complete: `{report['complete']}`. See `summaries/analysis.json` for
+assumption warnings, missing pairs and convergence status.
+"""
+    (result_root / "README.md").write_text(content)
 
 
 def execute_experiment(

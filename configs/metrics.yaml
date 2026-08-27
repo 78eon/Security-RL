@@ -4,7 +4,7 @@
 
 primary_metric: native_return
 
-# The four pre-registered primaries. Bonferroni corrects across exactly these;
+# The five pre-registered primaries. Bonferroni corrects across exactly these;
 # anything else is reported as descriptive and labelled exploratory.
 primary_metrics:
   - native_return       # competence on the task, in the environment's own units

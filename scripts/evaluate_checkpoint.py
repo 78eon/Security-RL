@@ -18,8 +18,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--postgres", action="store_true")
     args = parser.parse_args(argv)
-    bundle = evaluate_checkpoint(args.run, args.seeds, args.out)
+    bundle = evaluate_checkpoint(args.run, args.seeds, args.out, postgres=args.postgres)
     successes = sum(episode.goal_reached for episode in bundle.episodes)
     print(f"evaluated {len(bundle.episodes)} episodes; " f"{successes} goals; wrote {args.out}")
     return 0

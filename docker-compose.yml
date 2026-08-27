@@ -68,8 +68,9 @@ services:
       - ./.gitignore:/app/.gitignore:ro
       - ./pyproject.toml:/app/pyproject.toml:ro
       - ./.env.example:/app/.env.example:ro
-      # The single writable path.
+      # Generated run and evidence outputs are the only writable paths.
       - ./runs:/app/runs:rw
+      - ./results:/app/results:rw
     # CP-06
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

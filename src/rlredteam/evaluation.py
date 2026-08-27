@@ -246,8 +246,105 @@ def write_bundle(bundle: EvaluationBundle, out_dir: Path, metadata: dict) -> Non
     )
 
 
+def persist_bundle(
+    bundle: EvaluationBundle, manifest: ExperimentManifest, checkpoint: Path
+) -> dict:
+    """Persist evaluation under the training run's PostgreSQL experiment."""
+    from rlredteam.storage.postgres_logger import EpisodeLogger, EpisodeRecord
+
+    if manifest.database_experiment_id is None:
+        raise EvaluationError("training manifest has no PostgreSQL experiment identifier")
+    steps_by_seed: dict[int, list[dict]] = {}
+    for step in bundle.steps:
+        steps_by_seed.setdefault(int(step["evaluation_seed"]), []).append(step)
+
+    logger = EpisodeLogger.start(
+        name=manifest.experiment_id,
+        reward_mode=manifest.reward_mode,
+        config_hash=manifest.reward_config_hash,
+        topology_config_hash=manifest.topology_config_hash,
+        topology_hash=manifest.topology_hash,
+        cve_manifest_sha256=manifest.cve_manifest_sha256,
+        seed_set=[manifest.training_seed],
+        condition=manifest.reward_mode,
+        algorithm="PPO",
+        designation="evaluation",
+        evaluation_seeds=[episode.evaluation_seed for episode in bundle.episodes],
+        checkpoint_path=str(checkpoint),
+        experiment_id=manifest.database_experiment_id,
+        log_steps=True,
+    )
+    try:
+        for episode_index, episode in enumerate(bundle.episodes):
+            raw_steps = steps_by_seed.get(episode.evaluation_seed, [])
+            logger.log_episode(
+                EpisodeRecord(
+                    seed=episode.evaluation_seed,
+                    topology_seed=episode.topology_seed,
+                    episode_idx=episode_index,
+                    total_reward=episode.policy_return,
+                    native_reward=episode.native_return,
+                    length=episode.length,
+                    terminal_state=episode.terminal_reason,
+                    goal_reached=episode.goal_reached,
+                    exploited_hosts=[
+                        step["target"]
+                        for step in raw_steps
+                        if step["success"] and step["access_gained"] > 0 and step["target"]
+                    ],
+                    mean_cvss_exploited=episode.mean_cvss_exploited,
+                    max_cvss_exploited=episode.max_cvss_exploited,
+                    hosts_compromised=episode.hosts_compromised,
+                    steps=[_step_record(step) for step in raw_steps],
+                )
+            )
+        logger.flush()
+        logger.finish("complete")
+        return {
+            "database_experiment_id": logger.experiment_id,
+            "database_evaluation_run_id": logger.run_id,
+        }
+    except Exception:
+        logger.finish("failed")
+        raise
+    finally:
+        logger._conn.close()
+
+
+def _step_record(step: dict):
+    from rlredteam.storage.postgres_logger import StepRecord
+
+    target = step.get("target")
+    return StepRecord(
+        step_idx=int(step["step"]),
+        action_name=str(step["action"]),
+        action_kind=str(step["action_kind"]),
+        tactic=step.get("tactic"),
+        technique_id=step.get("technique_id"),
+        target_subnet=int(target[0]) if target else None,
+        target_host=int(target[1]) if target else None,
+        success=bool(step["success"]),
+        reward=float(step["policy_reward"]),
+        native_reward=float(step["native_reward"]),
+        cve_id=step.get("cve_id"),
+        cvss_base=step.get("cvss_base"),
+        cve_term=float(step["cve_term"]),
+        tactic_term=float(step["tactic_term"]),
+        crown_jewel_term=float(step["crown_jewel_term"]),
+        penalty_term=float(step["penalty_term"]),
+        access_gained=int(step["access_gained"]),
+        newly_discovered=int(step["newly_discovered"]),
+        is_crown_jewel=bool(step["is_crown_jewel"]),
+        error=step.get("error"),
+    )
+
+
 def evaluate_checkpoint(
-    run_dir: Path, evaluation_seeds: list[int], out_dir: Path
+    run_dir: Path,
+    evaluation_seeds: list[int],
+    out_dir: Path,
+    *,
+    postgres: bool = False,
 ) -> EvaluationBundle:
     """Validate, load and evaluate one persisted PPO checkpoint."""
     from stable_baselines3 import PPO
@@ -284,5 +381,7 @@ def evaluate_checkpoint(
         "policy_sha256_after": after,
         "manifest": manifest.to_dict(),
     }
+    if postgres:
+        metadata.update(persist_bundle(bundle, manifest, checkpoint))
     write_bundle(bundle, out_dir, metadata)
     return bundle

@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo train train-sparse catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -58,6 +58,23 @@ train:          ## 50k-step PPO pilot (shaped reward, seed 42)
 train-sparse:   ## Same pilot on the sparse baseline
 	$(COMPOSE) run --rm app python -m rlredteam.train --seed 42 --timesteps 50000 \
 		--reward-config configs/sparse.yaml
+
+experiment-freeze: ## Preregister hashes for the canonical fixed-topology experiment
+	podman run --rm --user 0 \
+		-v "$$PWD/configs:/app/configs:rw,z" \
+		-v "$$PWD/data:/app/data:ro,z" \
+		-v "$$PWD/.git:/app/.git:ro,z" \
+		localhost/sourcecode_app:latest python scripts/run_experiment.py \
+		--config configs/experiments/experiment_01.yaml --freeze
+
+experiment-dry-run: ## Validate frozen inputs and print the 20-run grid
+	$(COMPOSE) run --rm app python scripts/run_experiment.py \
+		--config configs/experiments/experiment_01.yaml --dry-run
+
+experiment:     ## Train, evaluate and package the canonical Essential experiment
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/run_experiment.py \
+		--config configs/experiments/experiment_01.yaml
 
 gui-build:      ## Build the desktop GUI image (separate from training)
 	podman build -t rlredteam-gui -f Dockerfile.gui .
