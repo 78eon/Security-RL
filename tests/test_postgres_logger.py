@@ -84,6 +84,13 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 native_reward=1.0,
                 cve_id="CVE-2021-42013",
                 cvss_base=9.8,
+                cve_term=2.5,
+                tactic_term=0.5,
+                crown_jewel_term=100.0 if s == steps - 1 else 0.0,
+                penalty_term=0.0,
+                access_gained=1,
+                newly_discovered=1,
+                is_crown_jewel=s == steps - 1,
             )
             for s in range(steps)
         ],
@@ -134,6 +141,44 @@ def test_episode_reads_back_with_values_intact(logger: EpisodeLogger, conninfo: 
     assert row[6] == pytest.approx(8.4)
 
 
+def test_experiment_reconstructs_run_episode_and_attributed_steps(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0))
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT e.name, r.designation, r.status, ep.episode_idx,
+                   ep.terminal_state, s.step_idx, s.action_name,
+                   s.cve_term, s.tactic_term, s.crown_jewel_term,
+                   s.access_gained, s.is_crown_jewel
+            FROM experiments e
+            JOIN runs r ON r.experiment_id = e.id
+            JOIN episodes ep ON ep.run_id = r.id
+            JOIN steps s ON s.episode_id = ep.id
+            WHERE e.id = %s
+            ORDER BY ep.episode_idx, s.step_idx
+            """,
+            (logger.experiment_id,),
+        ).fetchall()
+
+    assert len(rows) == 3
+    assert rows[0][:7] == (
+        "pytest-synthetic",
+        "training",
+        "running",
+        0,
+        "goal",
+        0,
+        "e_srv_0",
+    )
+    assert rows[0][7:11] == pytest.approx((2.5, 0.5, 0.0, 1))
+    assert rows[-1][9] == pytest.approx(100.0)
+    assert rows[-1][11] is True
+
+
 def test_batching_defers_writes_until_threshold(logger: EpisodeLogger) -> None:
     logger.log_episode(make_episode(0))
     assert logger.episode_count() == 0, "should still be buffered"
@@ -157,12 +202,18 @@ def test_flush_on_close_loses_nothing(conninfo: str) -> None:
         assert instance.episode_count() == 0
 
     with psycopg.connect(conninfo) as conn:
-        count = conn.execute(
-            "SELECT count(*) FROM episodes WHERE experiment_id = %s", (experiment_id,)
-        ).fetchone()[0]
+        count, status = conn.execute(
+            """
+            SELECT count(ep.id), max(r.status)
+            FROM runs r LEFT JOIN episodes ep ON ep.run_id = r.id
+            WHERE r.experiment_id = %s
+            """,
+            (experiment_id,),
+        ).fetchone()
         conn.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))
         conn.commit()
     assert count == 1, "context manager exit must flush"
+    assert status == "complete"
 
 
 def test_duplicate_episode_index_is_rejected(logger: EpisodeLogger) -> None:
@@ -227,16 +278,24 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
 
     configs = Path(__file__).resolve().parents[1] / "configs"
     args = train_module.parse_args(
-        ["--seed", "42", "--timesteps", "2048",
-         "--reward-config", str(configs / "shaped.yaml"),
-         "--postgres", "--log-steps"]
+        [
+            "--seed",
+            "42",
+            "--timesteps",
+            "2048",
+            "--reward-config",
+            str(configs / "shaped.yaml"),
+            "--postgres",
+            "--log-steps",
+        ]
     )
     report = train_module.train(args)
     reported = report["episodes"]
 
     with psycopg.connect(conninfo) as conn:
         experiment = conn.execute(
-            "SELECT id, config_hash, topology_config_hash, cve_manifest_sha256 "
+            "SELECT id, config_hash, topology_config_hash, topology_hash, "
+            "cve_manifest_sha256 "
             "FROM experiments ORDER BY id DESC LIMIT 1"
         ).fetchone()
         experiment_id = experiment[0]
@@ -246,7 +305,8 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
         ).fetchone()[0]
         steps = conn.execute(
             "SELECT count(*) FROM steps s JOIN episodes e ON e.id = s.episode_id "
-            "WHERE e.experiment_id = %s", (experiment_id,)
+            "WHERE e.experiment_id = %s",
+            (experiment_id,),
         ).fetchone()[0]
         step_sum = conn.execute(
             "SELECT coalesce(sum(length),0) FROM episodes WHERE experiment_id = %s",
@@ -264,7 +324,8 @@ def test_training_run_writes_consistent_rows(conninfo: str) -> None:
         # Test 14, checked at the storage layer as well as the snapshot file.
         assert experiment[1] == RewardConfig.from_yaml(configs / "shaped.yaml").hash()
         assert experiment[2] == TopologyConfig.from_yaml().config_hash()
-        assert experiment[3] == digest(CVECatalogue.open_default())
+        assert experiment[3] == "f875a25adf37ee34"
+        assert experiment[4] == digest(CVECatalogue.open_default())
     finally:
         with psycopg.connect(conninfo) as conn:
             conn.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))

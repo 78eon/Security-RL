@@ -51,9 +51,9 @@ def test_valid_record_is_accepted() -> None:
         ("base_score", -1.0),
         ("base_score", "not a number"),
         ("base_severity", "SEVERE"),
-        ("base_severity", "LOW"),          # disagrees with 9.8
+        ("base_severity", "LOW"),  # disagrees with 9.8
         ("kind", "something-else"),
-        ("cvss_version", "3.0"),           # disagrees with the vector prefix
+        ("cvss_version", "3.0"),  # disagrees with the vector prefix
         ("vector", "CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
         ("source_url", "https://example.com/other"),
     ],
@@ -77,11 +77,13 @@ def test_committed_catalogue_passes_validation() -> None:
     for record in CVECatalogue.open_default().all_records():
         validate_record(
             {
-                "cve_id": record.cve_id, "kind": record.kind,
+                "cve_id": record.cve_id,
+                "kind": record.kind,
                 "cvss_version": record.cvss_version,
                 "base_score": record.base_score,
                 "base_severity": record.base_severity,
-                "vector": record.vector, "source_url": record.source_url,
+                "vector": record.vector,
+                "source_url": record.source_url,
             }
         )
 
@@ -94,10 +96,15 @@ def described(**overrides) -> dict:
         "subnets": [1, 1, 1, 5, 1],
         "topology": [[1, 1, 0], [1, 1, 1], [0, 1, 1]],
         "hosts": [[1, 0], [2, 0]],
-        "services": ["a", "b"], "os": ["linux"], "processes": ["p"],
-        "exploits": ["e_0"], "privescs": ["pe_0"],
-        "sensitive_hosts": {"(2, 0)": 100.0}, "step_limit": 1000,
-        "observation_space": [234], "action_space_n": 120,
+        "services": ["a", "b"],
+        "os": ["linux"],
+        "processes": ["p"],
+        "exploits": ["e_0"],
+        "privescs": ["pe_0"],
+        "sensitive_hosts": {"(2, 0)": 100.0},
+        "step_limit": 1000,
+        "observation_space": [234],
+        "action_space_n": 120,
     }
     base.update(overrides)
     return base
@@ -138,13 +145,23 @@ def test_environment_hash_ignores_network_details() -> None:
 
 def manifest(**overrides) -> prov.ExperimentManifest:
     base = dict(
-        experiment_id="shaped-s42-t42", git_commit="abc123", git_dirty=False,
-        python_version="3.11.15", dependency_lock_hash="lock",
-        docker_image_digest="", training_seed=42, topology_seed=42,
-        topology_hash="topo", topology_config_hash="cfg",
-        environment_config_hash="env", cve_database_hash="cve",
-        reward_config_hash="rew", ppo_config_hash="ppo", dataset_version="16",
-        training_budget=200_000, ppo_config={"n_steps": 2048},
+        experiment_id="shaped-s42-t42",
+        git_commit="abc123",
+        git_dirty=False,
+        python_version="3.11.15",
+        dependency_lock_hash="lock",
+        docker_image_digest="",
+        training_seed=42,
+        topology_seed=42,
+        topology_hash="topo",
+        topology_config_hash="cfg",
+        environment_config_hash="env",
+        cve_manifest_sha256="cve",
+        reward_config_hash="rew",
+        ppo_config_hash="ppo",
+        dataset_version="16",
+        training_budget=200_000,
+        ppo_config={"n_steps": 2048},
     )
     base.update(overrides)
     return prov.ExperimentManifest(**base)
@@ -233,9 +250,13 @@ def protocol() -> dict:
 def episodes_from(values: list[float]) -> list[dict]:
     return [
         {
-            "native_return": v, "shaped_return": v, "length": 100,
-            "goal_reached": True, "mean_cvss_exploited": 8.0,
-            "max_cvss_exploited": 9.5, "hosts_compromised": 3,
+            "native_return": v,
+            "shaped_return": v,
+            "length": 100,
+            "goal_reached": True,
+            "mean_cvss_exploited": 8.0,
+            "max_cvss_exploited": 9.5,
+            "hosts_compromised": 3,
         }
         for v in values
     ]
@@ -359,3 +380,19 @@ def test_protocol_pins_stochastic_native_evaluation(protocol: dict) -> None:
     assert protocol["evaluation"]["action_selection"] == "stochastic"
     assert protocol["evaluation"]["reward_scale"] == "native"
     assert protocol["evaluation"]["seeds"] == list(range(42, 52))
+    assert protocol["evaluation"]["episode_seeds"] == list(range(1001, 1011))
+
+
+def test_convergence_uses_training_rows_not_evaluation_rows(protocol: dict) -> None:
+    evaluation = episodes_from([-500.0] * 10)
+    training = episodes_from([-2000.0 + 30 * index for index in range(60)])
+    metrics = metrics_for_run(
+        "r",
+        "shaped",
+        42,
+        42,
+        evaluation,
+        protocol,
+        training_episodes=training,
+    )
+    assert not metrics.converged

@@ -82,6 +82,14 @@ class StepRecord:
     target_host: int | None = None
     cve_id: str | None = None
     cvss_base: float | None = None
+    cve_term: float = 0.0
+    tactic_term: float = 0.0
+    crown_jewel_term: float = 0.0
+    penalty_term: float = 0.0
+    access_gained: int = 0
+    newly_discovered: int = 0
+    is_crown_jewel: bool = False
+    error: str | None = None
 
 
 @dataclass(slots=True)
@@ -96,6 +104,8 @@ class EpisodeRecord:
     goal_reached: bool
     exploited_hosts: list = field(default_factory=list)
     mean_cvss_exploited: float | None = None
+    max_cvss_exploited: float | None = None
+    hosts_compromised: int = 0
     steps: list[StepRecord] = field(default_factory=list)
 
 
@@ -116,11 +126,13 @@ class EpisodeLogger:
         self,
         conn: psycopg.Connection,
         experiment_id: int,
+        run_id: int,
         batch_size: int = 20,
         log_steps: bool = True,
     ) -> None:
         self._conn = conn
         self.experiment_id = experiment_id
+        self.run_id = run_id
         self.batch_size = batch_size
         self.log_steps = log_steps
         self._pending: list[EpisodeRecord] = []
@@ -141,26 +153,71 @@ class EpisodeLogger:
         conninfo: str | None = None,
         batch_size: int = 20,
         log_steps: bool = True,
+        condition: str | None = None,
+        algorithm: str = "PPO",
+        topology_id: str | None = None,
+        topology_hash: str | None = None,
+        hyperparameters: dict | None = None,
+        designation: str = "training",
+        evaluation_seeds: list[int] | None = None,
+        checkpoint_path: str | None = None,
+        experiment_id: int | None = None,
     ) -> EpisodeLogger:
         conn = psycopg.connect(conninfo or connection_string())
         ensure_schema(conn)
         with conn.cursor() as cur:
+            if experiment_id is None:
+                cur.execute(
+                    """
+                    INSERT INTO experiments (
+                        name, condition, algorithm, reward_mode, config_hash,
+                        topology_config_hash, topology_id, topology_hash,
+                        cve_manifest_sha256, hyperparameters, git_sha, seed_set, notes
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    RETURNING id
+                    """,
+                    (
+                        name,
+                        condition or reward_mode,
+                        algorithm,
+                        reward_mode,
+                        config_hash,
+                        topology_config_hash,
+                        topology_id,
+                        topology_hash,
+                        cve_manifest_sha256,
+                        Jsonb(hyperparameters or {}),
+                        git_sha(),
+                        seed_set,
+                        notes,
+                    ),
+                )
+                experiment_id = cur.fetchone()[0]
             cur.execute(
                 """
-                INSERT INTO experiments (
-                    name, reward_mode, config_hash, topology_config_hash,
-                    cve_manifest_sha256, git_sha, seed_set, notes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO runs (
+                    experiment_id, seed, designation, status, evaluation_seeds,
+                    checkpoint_path
+                ) VALUES (%s,%s,%s,'running',%s,%s)
                 RETURNING id
                 """,
                 (
-                    name, reward_mode, config_hash, topology_config_hash,
-                    cve_manifest_sha256, git_sha(), seed_set, notes,
+                    experiment_id,
+                    seed_set[0],
+                    designation,
+                    evaluation_seeds or [],
+                    checkpoint_path,
                 ),
             )
-            experiment_id = cur.fetchone()[0]
+            run_id = cur.fetchone()[0]
         conn.commit()
-        return cls(conn, experiment_id, batch_size=batch_size, log_steps=log_steps)
+        return cls(
+            conn,
+            experiment_id,
+            run_id,
+            batch_size=batch_size,
+            log_steps=log_steps,
+        )
 
     def __enter__(self) -> EpisodeLogger:
         return self
@@ -172,10 +229,22 @@ class EpisodeLogger:
         tb: TracebackType | None,
     ) -> None:
         # Flush even on error: a crashed run's completed episodes are still data.
+        status = "complete" if exc_type is None else "failed"
         try:
             self.flush()
+            self.finish(status)
         finally:
             self._conn.close()
+
+    def finish(self, status: str = "complete") -> None:
+        if status not in {"complete", "failed"}:
+            raise ValueError("run status must be complete or failed")
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status = %s, ended_at = now() WHERE id = %s",
+                (status, self.run_id),
+            )
+        self._conn.commit()
 
     # -- writing ---------------------------------------------------------
 
@@ -211,18 +280,28 @@ class EpisodeLogger:
                 cur.execute(
                     """
                     INSERT INTO episodes (
-                        experiment_id, seed, topology_seed, episode_idx,
+                        experiment_id, run_id, seed, topology_seed, episode_idx,
                         total_reward, native_reward, length, terminal_state,
-                        goal_reached, exploited_hosts, mean_cvss_exploited
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        goal_reached, exploited_hosts, mean_cvss_exploited,
+                        max_cvss_exploited, hosts_compromised
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     RETURNING id
                     """,
                     (
-                        self.experiment_id, record.seed, record.topology_seed,
-                        record.episode_idx, record.total_reward,
-                        record.native_reward, record.length,
-                        record.terminal_state, record.goal_reached,
-                        Jsonb(record.exploited_hosts), record.mean_cvss_exploited,
+                        self.experiment_id,
+                        self.run_id,
+                        record.seed,
+                        record.topology_seed,
+                        record.episode_idx,
+                        record.total_reward,
+                        record.native_reward,
+                        record.length,
+                        record.terminal_state,
+                        record.goal_reached,
+                        Jsonb(record.exploited_hosts),
+                        record.mean_cvss_exploited,
+                        record.max_cvss_exploited,
+                        record.hosts_compromised,
                     ),
                 )
                 episode_id = cur.fetchone()[0]
@@ -234,14 +313,33 @@ class EpisodeLogger:
                             episode_id, step_idx, action_name, action_kind,
                             tactic, technique_id, target_subnet, target_host,
                             success, reward, native_reward, cve_id, cvss_base
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            , cve_term, tactic_term, crown_jewel_term, penalty_term,
+                            access_gained, newly_discovered, is_crown_jewel, error
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         """,
                         [
                             (
-                                episode_id, s.step_idx, s.action_name,
-                                s.action_kind, s.tactic, s.technique_id,
-                                s.target_subnet, s.target_host, s.success,
-                                s.reward, s.native_reward, s.cve_id, s.cvss_base,
+                                episode_id,
+                                s.step_idx,
+                                s.action_name,
+                                s.action_kind,
+                                s.tactic,
+                                s.technique_id,
+                                s.target_subnet,
+                                s.target_host,
+                                s.success,
+                                s.reward,
+                                s.native_reward,
+                                s.cve_id,
+                                s.cvss_base,
+                                s.cve_term,
+                                s.tactic_term,
+                                s.crown_jewel_term,
+                                s.penalty_term,
+                                s.access_gained,
+                                s.newly_discovered,
+                                s.is_crown_jewel,
+                                s.error,
                             )
                             for s in record.steps
                         ],
@@ -292,7 +390,9 @@ def summarise(conninfo: str | None = None) -> str:
     return json.dumps(
         [
             {
-                "id": r[0], "name": r[1], "reward_mode": r[2],
+                "id": r[0],
+                "name": r[1],
+                "reward_mode": r[2],
                 "episodes": r[3],
                 "mean_native_reward": float(r[4]) if r[4] is not None else None,
                 "success_rate": float(r[5]) if r[5] is not None else None,

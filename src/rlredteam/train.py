@@ -54,7 +54,7 @@ PPO_DEFAULTS: dict = {
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,
-    "ent_coef": 0.01,      # deviation from the SB3 default of 0.0
+    "ent_coef": 0.01,  # deviation from the SB3 default of 0.0
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
     "device": "cpu",
@@ -149,10 +149,18 @@ class EpisodeCollector(BaseCallback):
         self._csv_writer = csv.DictWriter(
             self._csv_file,
             fieldnames=[
-                "episode_idx", "seed", "topology_seed", "timesteps",
-                "shaped_return", "native_return", "length",
-                "terminal_state", "goal_reached",
-                "hosts_compromised", "mean_cvss_exploited", "max_cvss_exploited",
+                "episode_idx",
+                "seed",
+                "topology_seed",
+                "timesteps",
+                "shaped_return",
+                "native_return",
+                "length",
+                "terminal_state",
+                "goal_reached",
+                "hosts_compromised",
+                "mean_cvss_exploited",
+                "max_cvss_exploited",
             ],
         )
         self._csv_writer.writeheader()
@@ -237,6 +245,14 @@ class EpisodeCollector(BaseCallback):
                 native_reward=event.native_reward,
                 cve_id=event.cve_id,
                 cvss_base=event.cvss_base,
+                cve_term=breakdown.cve,
+                tactic_term=breakdown.tactic,
+                crown_jewel_term=breakdown.crown_jewel,
+                penalty_term=breakdown.penalty,
+                access_gained=int(event.access_gained),
+                newly_discovered=event.newly_discovered,
+                is_crown_jewel=event.is_crown_jewel,
+                error=event.error,
             )
             for idx, (event, breakdown) in enumerate(partial.step_rows)
         ]
@@ -253,6 +269,8 @@ class EpisodeCollector(BaseCallback):
                 goal_reached=record["goal_reached"],
                 exploited_hosts=[list(addr) for addr in partial.exploited],
                 mean_cvss_exploited=record["mean_cvss_exploited"],
+                max_cvss_exploited=record["max_cvss_exploited"],
+                hosts_compromised=record["hosts_compromised"],
                 steps=steps,
             )
         )
@@ -307,7 +325,8 @@ def train(args: argparse.Namespace) -> dict:
     # topology and destroys the causal comparison the ablation exists to make.
     # It has a fixed default and must be changed deliberately.
     topology_seed = args.topology_seed
-    run_name = f"{reward_config.mode}-s{args.seed}-t{topology_seed}"
+    prefix = f"{args.experiment_id}-" if args.experiment_id else ""
+    run_name = f"{prefix}{reward_config.mode}-s{args.seed}-t{topology_seed}"
     out_dir = RUNS_DIR / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -330,7 +349,7 @@ def train(args: argparse.Namespace) -> dict:
         topology_hash=provenance_mod.topology_hash(described),
         topology_config_hash=topology_config.config_hash(),
         environment_config_hash=provenance_mod.environment_config_hash(described),
-        cve_database_hash=digest(catalogue),
+        cve_manifest_sha256=digest(catalogue),
         reward_config_hash=reward_config.hash(),
         ppo_config_hash=provenance_mod._digest(ppo_config),
         dataset_version=str(len(catalogue)),
@@ -352,20 +371,16 @@ def train(args: argparse.Namespace) -> dict:
     if not args.skip_gate:
         provenance_mod.enforce(gate)
     elif not gate.passed:
-        print("  WARNING: gate failures ignored via --skip-gate; this run is not "
-              "valid for the graded comparison.")
-
-    manifest.write(out_dir / "manifest.json")
-    provenance = manifest.to_dict() | {"topology": summary}
-    (out_dir / "config.snapshot.json").write_text(
-        json.dumps(provenance, indent=2, sort_keys=True, default=str)
-    )
+        print(
+            "  WARNING: gate failures ignored via --skip-gate; this run is not "
+            "valid for the graded comparison."
+        )
 
     print(f"run                  : {run_name}")
     print(f"reward mode          : {reward_config.mode}")
     print(f"topology hash        : {manifest.topology_hash}")
     print(f"topology config hash : {manifest.topology_config_hash}")
-    print(f"CVE database hash    : {manifest.cve_database_hash}")
+    print(f"CVE manifest SHA-256 : {manifest.cve_manifest_sha256}")
     print(f"observation space    : {env.observation_space.shape}")
     print(f"action space         : {env.action_space}")
     print(f"output               : {out_dir}")
@@ -378,11 +393,26 @@ def train(args: argparse.Namespace) -> dict:
             name=run_name,
             reward_mode=str(reward_config.mode),
             config_hash=manifest.reward_config_hash,
-            topology_config_hash=manifest.topology_hash,
-            cve_manifest_sha256=manifest.cve_database_hash,
+            topology_config_hash=manifest.topology_config_hash,
+            topology_hash=manifest.topology_hash,
+            topology_id=summary["name"],
+            cve_manifest_sha256=manifest.cve_manifest_sha256,
             seed_set=[args.seed],
             log_steps=args.log_steps,
+            condition=str(reward_config.mode),
+            algorithm="PPO",
+            hyperparameters=ppo_config,
+            designation="training",
+            checkpoint_path=manifest.checkpoint_path,
         )
+        manifest.database_experiment_id = episode_logger.experiment_id
+        manifest.database_run_id = episode_logger.run_id
+
+    manifest.write(out_dir / "manifest.json")
+    provenance = manifest.to_dict() | {"topology": summary}
+    (out_dir / "config.snapshot.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True, default=str)
+    )
 
     collector = EpisodeCollector(
         seed=args.seed,
@@ -413,11 +443,16 @@ def train(args: argparse.Namespace) -> dict:
         device="cpu",
     )
 
+    training_status = "complete"
     try:
         model.learn(total_timesteps=args.timesteps, callback=callbacks, progress_bar=False)
+    except Exception:
+        training_status = "failed"
+        raise
     finally:
         if episode_logger is not None:
             episode_logger.flush()
+            episode_logger.finish(training_status)
             episode_logger._conn.close()
 
     # runs/ is gitignored: trained attack-policy weights are gated by default.
@@ -451,9 +486,13 @@ def summarise(episodes: list[dict], provenance: dict) -> dict:
             float(np.mean([e["length"] for e in tail_successes])) if tail_successes else None
         ),
         "mean_cvss_exploited_last_10pct": (
-            float(np.mean([e["mean_cvss_exploited"] for e in tail
-                           if e["mean_cvss_exploited"] is not None]))
-            if any(e["mean_cvss_exploited"] is not None for e in tail) else None
+            float(
+                np.mean(
+                    [e["mean_cvss_exploited"] for e in tail if e["mean_cvss_exploited"] is not None]
+                )
+            )
+            if any(e["mean_cvss_exploited"] is not None for e in tail)
+            else None
         ),
     }
 
@@ -480,6 +519,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=42, help="training seed")
     parser.add_argument(
+        "--experiment-id",
+        default="",
+        help="optional prefix that keeps a controlled experiment's runs isolated",
+    )
+    parser.add_argument(
         "--topology-seed",
         type=int,
         default=DEFAULT_TOPOLOGY_SEED,
@@ -502,15 +546,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--checkpoint-every", type=int, default=0)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
-        "--frozen", type=Path, default=None,
+        "--frozen",
+        type=Path,
+        default=None,
         help="experiment manifest of frozen hashes; a mismatch stops the run",
     )
     parser.add_argument(
-        "--allow-network", action="store_true",
+        "--allow-network",
+        action="store_true",
         help="permit external network during training (not valid for graded runs)",
     )
     parser.add_argument(
-        "--skip-gate", action="store_true",
+        "--skip-gate",
+        action="store_true",
         help="report gate failures but train anyway (smoke tests only)",
     )
     return parser.parse_args(argv)

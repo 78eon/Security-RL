@@ -35,7 +35,11 @@ def git_commit() -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5, cwd=REPO_ROOT, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=REPO_ROOT,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -61,7 +65,11 @@ def git_dirty() -> bool | None:
     try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5, cwd=REPO_ROOT, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=REPO_ROOT,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -72,8 +80,7 @@ def git_dirty() -> bool | None:
     # Deletions of files that are simply not mounted are an artefact of the
     # partial mount, not a real modification.
     artefacts = [
-        ln for ln in lines
-        if ln[:2].strip() == "D" and not (REPO_ROOT / ln[3:].strip()).exists()
+        ln for ln in lines if ln[:2].strip() == "D" and not (REPO_ROOT / ln[3:].strip()).exists()
     ]
     if artefacts and len(artefacts) == len(lines):
         return None
@@ -151,12 +158,13 @@ class ExperimentManifest:
     topology_hash: str
     topology_config_hash: str
     environment_config_hash: str
-    cve_database_hash: str
+    cve_manifest_sha256: str
     reward_config_hash: str
     ppo_config_hash: str
     dataset_version: str
     training_budget: int
     checkpoint_path: str = ""
+    database_experiment_id: int | None = None
     database_run_id: int | None = None
     ppo_config: dict = field(default_factory=dict)
     reward_mode: str = ""
@@ -170,7 +178,12 @@ class ExperimentManifest:
 
     @classmethod
     def read(cls, path: Path) -> ExperimentManifest:
-        return cls(**json.loads(Path(path).read_text()))
+        raw = json.loads(Path(path).read_text())
+        # Read old local artifacts for diagnostics, but always write the
+        # research-facing field used by PostgreSQL and result metadata.
+        if "cve_manifest_sha256" not in raw and "cve_database_hash" in raw:
+            raw["cve_manifest_sha256"] = raw.pop("cve_database_hash")
+        return cls(**raw)
 
 
 # -- pre-run gate ----------------------------------------------------------
@@ -219,13 +232,17 @@ def run_gate(
 
     if frozen:
         for key in (
-            "topology_hash", "cve_database_hash",
-            "reward_config_hash", "ppo_config_hash",
+            "topology_hash",
+            "cve_manifest_sha256",
+            "reward_config_hash",
+            "ppo_config_hash",
         ):
             expected = frozen.get(key)
             actual = getattr(manifest, key, None)
             if expected is None:
                 continue
+            if key == "reward_config_hash" and isinstance(expected, dict):
+                expected = expected.get(manifest.reward_mode)
             result.add(
                 f"{key} matches frozen experiment",
                 expected == actual,
@@ -256,7 +273,8 @@ def run_gate(
             "working tree is clean",
             not manifest.git_dirty,
             "uncommitted changes — the recorded commit does not describe this run"
-            if manifest.git_dirty else "",
+            if manifest.git_dirty
+            else "",
         )
     result.add("dependency lock recorded", bool(manifest.dependency_lock_hash))
 

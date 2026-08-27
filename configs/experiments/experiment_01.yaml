@@ -1,0 +1,12 @@
+experiment:
+  id: experiment_01
+  description: Fixed-topology Sparse PPO versus Shaped PPO
+  arms: [sparse, shaped]
+  topology_seed: 42
+  training_seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  evaluation_seeds: [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]
+  training_timesteps: 40000
+  postgres: true
+  log_steps: true
+  frozen_inputs: configs/frozen_experiment.json
+  metrics: configs/metrics.yaml

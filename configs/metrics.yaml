@@ -8,14 +8,19 @@ primary_metric: native_return
 # anything else is reported as descriptive and labelled exploratory.
 primary_metrics:
   - native_return       # competence on the task, in the environment's own units
+  - native_return_std   # evaluation-return stability within each frozen policy
   - success_rate        # solvability
   - steps_to_goal       # efficiency, conditional on success
   - mean_cvss_exploited # severity shift — the hypothesis under test
 
 descriptive_metrics:
+  - native_return_median
+  - median_steps_to_goal
   - hvt_hit_rate
   - max_cvss_exploited
   - hosts_compromised
+  - discovered_hosts
+  - tactic_coverage
   - total_shaped_return
 
 statistics:
@@ -24,7 +29,7 @@ statistics:
   test: paired_t
   alpha: 0.05
   correction: bonferroni
-  family_size: 4          # = len(primary_metrics)
+  family_size: 5          # = len(primary_metrics)
   effect_size: cohens_d
   bootstrap_samples: 10000
   confidence: 0.95
@@ -39,6 +44,7 @@ evaluation:
   # objectives, so comparing shaped returns compares different rulers.
   reward_scale: native
   seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  episode_seeds: [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]
 
 # CP-29 — "converged" is a claim with a test behind it, not a synonym for
 # "the last few episodes". A run is converged only when, over the final

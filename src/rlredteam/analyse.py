@@ -39,13 +39,19 @@ class RunMetrics:
     topology_seed: int
     episodes: int
     native_return: float
+    native_return_std: float
+    native_return_median: float
     success_rate: float
     steps_to_goal: float | None
+    median_steps_to_goal: float | None
     mean_cvss_exploited: float | None
     hvt_hit_rate: float
     max_cvss_exploited: float | None
     hosts_compromised: float
+    discovered_hosts: float
+    tactic_coverage: float
     total_shaped_return: float
+    failure_reasons: dict[str, int]
     converged: bool
     convergence_detail: dict = field(default_factory=dict)
 
@@ -70,9 +76,7 @@ def assess_convergence(episodes: list[dict], protocol: dict) -> tuple[bool, dict
     detail: dict = {"criterion": rules}
 
     if len(episodes) < rules["min_episodes"]:
-        detail["reason"] = (
-            f"only {len(episodes)} episodes; need {rules['min_episodes']}"
-        )
+        detail["reason"] = f"only {len(episodes)} episodes; need {rules['min_episodes']}"
         return False, detail
 
     tail = _window(episodes, rules["window"])
@@ -127,6 +131,7 @@ def metrics_for_run(
     topology_seed: int,
     episodes: list[dict],
     protocol: dict,
+    training_episodes: list[dict] | None = None,
 ) -> RunMetrics:
     """Compute every metric for one run from its raw episodes."""
     if not episodes:
@@ -134,15 +139,25 @@ def metrics_for_run(
 
     threshold = protocol["high_value_target"]["cvss_threshold"]
     successes = [e for e in episodes if e["goal_reached"]]
-    cvss = [
-        e["mean_cvss_exploited"] for e in episodes
-        if e.get("mean_cvss_exploited") is not None
-    ]
-    maxima = [
-        e["max_cvss_exploited"] for e in episodes
-        if e.get("max_cvss_exploited") is not None
-    ]
-    converged, detail = assess_convergence(episodes, protocol)
+    cvss = [e["mean_cvss_exploited"] for e in episodes if e.get("mean_cvss_exploited") is not None]
+    maxima = [e["max_cvss_exploited"] for e in episodes if e.get("max_cvss_exploited") is not None]
+    convergence_rows = training_episodes if training_episodes is not None else episodes
+    converged, detail = assess_convergence(convergence_rows, protocol)
+    native_returns = [e["native_return"] for e in episodes]
+    successful_lengths = [e["length"] for e in successes]
+    failure_reasons: dict[str, int] = {}
+    for episode in episodes:
+        if episode["goal_reached"]:
+            continue
+        reason = str(episode.get("terminal_reason", "unknown"))
+        failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+    supported_tactics = {"recon", "exploit", "privesc"}
+    observed_tactics = {
+        tactic
+        for episode in episodes
+        for tactic in episode.get("tactics", [])
+        if tactic in supported_tactics
+    }
 
     return RunMetrics(
         run_name=run_name,
@@ -150,24 +165,22 @@ def metrics_for_run(
         seed=seed,
         topology_seed=topology_seed,
         episodes=len(episodes),
-        native_return=statistics.fmean([e["native_return"] for e in episodes]),
+        native_return=statistics.fmean(native_returns),
+        native_return_std=(statistics.stdev(native_returns) if len(native_returns) > 1 else 0.0),
+        native_return_median=statistics.median(native_returns),
         success_rate=len(successes) / len(episodes),
         # Conditional on success: averaging over failures rewards an arm that
         # fails fast, because a truncated episode has a fixed length.
-        steps_to_goal=(
-            statistics.fmean([e["length"] for e in successes]) if successes else None
-        ),
+        steps_to_goal=(statistics.fmean(successful_lengths) if successes else None),
+        median_steps_to_goal=(statistics.median(successful_lengths) if successes else None),
         mean_cvss_exploited=statistics.fmean(cvss) if cvss else None,
-        hvt_hit_rate=(
-            sum(1 for m in maxima if m >= threshold) / len(episodes) if maxima else 0.0
-        ),
+        hvt_hit_rate=(sum(1 for m in maxima if m >= threshold) / len(episodes) if maxima else 0.0),
         max_cvss_exploited=max(maxima) if maxima else None,
-        hosts_compromised=statistics.fmean(
-            [e.get("hosts_compromised", 0) for e in episodes]
-        ),
-        total_shaped_return=statistics.fmean(
-            [e.get("shaped_return", 0.0) for e in episodes]
-        ),
+        hosts_compromised=statistics.fmean([e.get("hosts_compromised", 0) for e in episodes]),
+        discovered_hosts=statistics.fmean([e.get("discovered_hosts", 0) for e in episodes]),
+        tactic_coverage=len(observed_tactics) / len(supported_tactics),
+        total_shaped_return=statistics.fmean([e.get("shaped_return", 0.0) for e in episodes]),
+        failure_reasons=failure_reasons,
         converged=converged,
         convergence_detail=detail,
     )
@@ -182,6 +195,10 @@ class Comparison:
     n_pairs: int
     mean_a: float
     mean_b: float
+    sd_a: float
+    sd_b: float
+    median_a: float
+    median_b: float
     difference: float
     t_statistic: float | None
     p_value: float | None
@@ -190,6 +207,7 @@ class Comparison:
     ci_low: float | None
     ci_high: float | None
     significant: bool
+    assumption_warning: str | None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -216,12 +234,23 @@ def paired_comparison(
 
     if len(shared) < 2:
         return Comparison(
-            metric=metric, n_pairs=len(shared),
+            metric=metric,
+            n_pairs=len(shared),
             mean_a=statistics.fmean(a) if a else float("nan"),
             mean_b=statistics.fmean(b) if b else float("nan"),
-            difference=float("nan"), t_statistic=None, p_value=None,
-            p_bonferroni=None, cohens_d=None, ci_low=None, ci_high=None,
+            sd_a=statistics.stdev(a) if len(a) > 1 else 0.0,
+            sd_b=statistics.stdev(b) if len(b) > 1 else 0.0,
+            median_a=statistics.median(a) if a else float("nan"),
+            median_b=statistics.median(b) if b else float("nan"),
+            difference=float("nan"),
+            t_statistic=None,
+            p_value=None,
+            p_bonferroni=None,
+            cohens_d=None,
+            ci_low=None,
+            ci_high=None,
             significant=False,
+            assumption_warning="fewer than two matched pairs",
         )
 
     result = stats.ttest_rel(b, a)
@@ -231,20 +260,31 @@ def paired_comparison(
     # Paired Cohen's d: mean difference over the SD of the differences.
     d = mean_difference / spread if spread > 1e-12 else None
 
-    low, high = _bootstrap_ci(
-        differences, rules["bootstrap_samples"], rules["confidence"]
-    )
+    low, high = _bootstrap_ci(differences, rules["bootstrap_samples"], rules["confidence"])
     p_bonferroni = (
         min(1.0, float(result.pvalue) * rules["family_size"])
-        if metric in protocol["primary_metrics"] else None
+        if metric in protocol["primary_metrics"]
+        else None
     )
     threshold = rules["alpha"]
+    assumption_warning = None
+    if len(differences) >= 3 and spread > 1e-12:
+        normality_p = float(stats.shapiro(differences).pvalue)
+        if normality_p < threshold:
+            assumption_warning = (
+                f"paired differences fail Shapiro-Wilk normality at alpha={threshold} "
+                f"(p={normality_p:.4g}); interpret the paired t-test cautiously"
+            )
 
     return Comparison(
         metric=metric,
         n_pairs=len(shared),
         mean_a=statistics.fmean(a),
         mean_b=statistics.fmean(b),
+        sd_a=statistics.stdev(a),
+        sd_b=statistics.stdev(b),
+        median_a=statistics.median(a),
+        median_b=statistics.median(b),
         difference=mean_difference,
         t_statistic=float(result.statistic),
         p_value=float(result.pvalue),
@@ -253,9 +293,9 @@ def paired_comparison(
         ci_low=low,
         ci_high=high,
         significant=bool(
-            (p_bonferroni if p_bonferroni is not None else float(result.pvalue))
-            < threshold
+            (p_bonferroni if p_bonferroni is not None else float(result.pvalue)) < threshold
         ),
+        assumption_warning=assumption_warning,
     )
 
 
@@ -330,9 +370,13 @@ def format_table(report: dict) -> str:
         "-" * 97,
     ]
     for c in report["comparisons"]:
+
         def fmt(value, spec=">12.3f"):
-            return "—".rjust(int(spec.split(">")[1].split(".")[0])) if value is None \
+            return (
+                "—".rjust(int(spec.split(">")[1].split(".")[0]))
+                if value is None
                 else format(value, spec)
+            )
 
         lines.append(
             f"{c['metric']:<24}{fmt(c['mean_a'])}{fmt(c['mean_b'])}"

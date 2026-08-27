@@ -88,7 +88,7 @@ gui/                 Native PySide6 research console — separate Podman image
 
 configs/             topology.yaml, shaped.yaml, sparse.yaml
 data/                cve_catalogue.sqlite, its manifest, raw NVD provenance JSON
-scripts/             rollout_random.py, run_ablation.py (stub)
+scripts/             training, frozen-checkpoint evaluation and experiment runners
 tools/               fetch_nvd.py -- one-shot, online, never imported by training
 runs/                checkpoints and artefacts. GITIGNORED (see below).
 ```
