@@ -20,16 +20,21 @@ from rlredteam.enterprise.model import (
     EnterpriseGraph,
     EnterpriseNode,
     NodeType,
+    TrueTopology,
     Vulnerability,
 )
+from rlredteam.enterprise.state import AgentKnowledge, Observation
 
 __all__ = [
+    "AgentKnowledge",
     "EdgeType",
     "EnterpriseCyberEnv",
     "EnterpriseGeneratorConfig",
     "EnterpriseGraph",
     "EnterpriseNode",
     "NodeType",
+    "Observation",
+    "TrueTopology",
     "GeneralisationSplit",
     "HybridCurriculumEnv",
     "HybridFamily",

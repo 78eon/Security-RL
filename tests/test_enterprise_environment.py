@@ -7,7 +7,14 @@ import socket
 import numpy as np
 import pytest
 
-from rlredteam.enterprise import EnterpriseCyberEnv, generate_enterprise
+from rlredteam.enterprise import (
+    AgentKnowledge,
+    EnterpriseCyberEnv,
+    EnterpriseGeneratorConfig,
+    Observation,
+    TrueTopology,
+    generate_enterprise,
+)
 from rlredteam.enterprise.environment import EnterpriseActionType
 from rlredteam.enterprise.model import NodeType
 
@@ -60,6 +67,15 @@ def test_generator_is_deterministic_and_typed() -> None:
     web_vuln = first.vulnerabilities["CVE-2021-42013"]
     assert web_vuln.applies_to(first.nodes["http"])
     assert first.nodes["http"].attributes["version"] == "2.4.50"
+    assert isinstance(first, TrueTopology)
+    assert not {
+        NodeType.CLOUD_RESOURCE,
+        NodeType.CLOUD_ACCOUNT,
+        NodeType.CLOUD_NETWORK,
+        NodeType.CLOUD_WORKLOAD,
+        NodeType.IAM_ROLE,
+        NodeType.STORAGE,
+    } & {node.type for node in first.nodes.values()}
 
 
 def test_initial_observation_hides_ground_truth() -> None:
@@ -72,6 +88,59 @@ def test_initial_observation_hides_ground_truth() -> None:
     assert "portal" not in env.knowledge.discovered
     assert not env.knowledge.known_vulnerabilities
     assert np.count_nonzero(info["action_mask"]) > 0
+    assert isinstance(env.knowledge, AgentKnowledge)
+
+
+def test_hidden_topology_does_not_change_initial_policy_inputs() -> None:
+    small = generate_enterprise(
+        42,
+        EnterpriseGeneratorConfig(extra_workstations=0, extra_services=0),
+    )
+    large = generate_enterprise(
+        99,
+        EnterpriseGeneratorConfig(extra_workstations=6, extra_services=5),
+    )
+    small_env = EnterpriseCyberEnv(small)
+    large_env = EnterpriseCyberEnv(large)
+
+    small_observation, small_info = small_env.reset(seed=7)
+    large_observation, large_info = large_env.reset(seed=7)
+
+    assert np.array_equal(small_observation, large_observation)
+    assert np.array_equal(small_info["action_mask"], large_info["action_mask"])
+    assert small_env.actions == large_env.actions
+    hidden_identifiers = set(large.nodes) | set(large.vulnerabilities)
+    assert not hidden_identifiers & {action.target for action in large_env.actions}
+
+
+def test_observation_uses_discovery_order_and_agent_knowledge_only() -> None:
+    env = EnterpriseCyberEnv(generate_enterprise(42))
+    initial, _ = env.reset(seed=42)
+
+    assert env.knowledge.discovery_order == ["internet", "seg_dmz"]
+    encoded = Observation.from_knowledge(
+        env.knowledge,
+        max_nodes=env.max_nodes,
+        step=0,
+        max_steps=env.max_steps,
+    ).as_array()
+    assert np.array_equal(initial, encoded)
+
+    act(env, EnterpriseActionType.DISCOVER_NETWORK, "seg_dmz")
+    assert env.knowledge.discovery_order[:4] == [
+        "internet",
+        "seg_dmz",
+        "fw_edge",
+        "web_host",
+    ]
+
+
+def test_hidden_entities_cannot_be_addressed_before_discovery() -> None:
+    env = EnterpriseCyberEnv(generate_enterprise(42))
+    env.reset(seed=42)
+
+    with pytest.raises(KeyError, match="not known to the agent"):
+        env.action_index(EnterpriseActionType.ACCESS_ASSET, "customer_records")
 
 
 def test_discovery_reveals_information_incrementally() -> None:
@@ -101,14 +170,14 @@ def test_invalid_action_is_penalised_without_changing_knowledge() -> None:
     before = env._snapshot()
 
     _, reward, terminated, truncated, info = act(
-        env, EnterpriseActionType.ACCESS_ASSET, "customer_records"
+        env, EnterpriseActionType.ACCESS_ASSET, "seg_dmz"
     )
 
     assert reward == pytest.approx(-5.0)
     assert env._snapshot() == before
     assert not terminated and not truncated
     assert not info["event"].success
-    assert "not been discovered" in info["event"].reason
+    assert "does not apply" in info["event"].reason
 
 
 def test_canonical_path_reaches_crown_jewel_and_is_reconstructed() -> None:

@@ -19,7 +19,7 @@ from rlredteam.enterprise.model import (
 class EnterpriseGeneratorConfig:
     extra_workstations: int = 2
     extra_services: int = 2
-    include_cloud: bool = True
+    include_cloud: bool = False
 
     def __post_init__(self) -> None:
         if self.extra_workstations < 0 or self.extra_services < 0:

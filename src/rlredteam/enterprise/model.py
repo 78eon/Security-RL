@@ -91,8 +91,13 @@ class Vulnerability:
 
 
 @dataclass(slots=True)
-class EnterpriseGraph:
-    """Ground truth hidden from the agent during an episode."""
+class TrueTopology:
+    """Authoritative ground truth hidden from the agent during an episode.
+
+    The environment may consult this object to resolve simulated action
+    outcomes.  A policy must never receive it; policy inputs are built from
+    :class:`AgentKnowledge` only.
+    """
 
     name: str
     nodes: dict[str, EnterpriseNode]
@@ -187,3 +192,9 @@ class EnterpriseGraph:
                 for vuln in sorted(self.vulnerabilities.values(), key=lambda item: item.id)
             ],
         }
+
+
+# Backwards-compatible name used by the existing demo and hybrid modules.
+# New partial-observability code should use ``TrueTopology`` to make the
+# research boundary explicit.
+EnterpriseGraph = TrueTopology
