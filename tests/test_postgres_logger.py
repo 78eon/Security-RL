@@ -92,6 +92,10 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 newly_discovered=1,
                 is_crown_jewel=s == steps - 1,
                 reward_paid=True,
+                target_entity=f"host_{s}",
+                state_changed=True,
+                prerequisites=["known:service"],
+                outcomes=[f"access:host_{s}"],
             )
             for s in range(steps)
         ],
@@ -178,6 +182,33 @@ def test_experiment_reconstructs_run_episode_and_attributed_steps(
     assert rows[0][7:11] == pytest.approx((2.5, 0.5, 0.0, 1))
     assert rows[-1][9] == pytest.approx(100.0)
     assert rows[-1][11] is True
+
+
+def test_enterprise_step_evidence_round_trips(logger: EpisodeLogger, conninfo: str) -> None:
+    record = make_episode(0)
+    record.topology_hash = "topology-realised-42"
+    record.known_nodes = 12
+    record.true_nodes = 15
+    record.discovery_coverage = 0.8
+    logger.log_episode(record)
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        row = conn.execute(
+            """
+            SELECT ep.topology_hash, ep.known_nodes, ep.true_nodes,
+                   ep.discovery_coverage, s.target_entity, s.state_changed,
+                   s.prerequisites, s.outcomes
+            FROM episodes ep JOIN steps s ON s.episode_id = ep.id
+            WHERE ep.experiment_id = %s
+            ORDER BY s.step_idx LIMIT 1
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+
+    assert row[:3] == ("topology-realised-42", 12, 15)
+    assert row[3] == pytest.approx(0.8)
+    assert row[4:] == ("host_0", True, ["known:service"], ["access:host_0"])
 
 
 def test_evaluation_run_attaches_to_training_experiment(

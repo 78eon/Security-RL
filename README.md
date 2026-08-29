@@ -27,6 +27,8 @@ make test                     # full suite, including Postgres and NASim integra
 make rollout                  # deterministic random-policy rollout
 make enterprise-demo          # typed discovery-to-crown-jewel demonstration
 make onprem-demo              # hidden on-prem topology feasibility trajectory
+make onprem-train             # mask-aware PPO over training topology seeds 1-60
+make onprem-eval              # frozen evaluation on held-out seeds + PostgreSQL
 make lab-build                # build isolated-range evidence collector
 make train                    # 50k-step PPO pilot on the shaped reward
 
@@ -42,6 +44,12 @@ from PostgreSQL, run summaries and configuration snapshots from `runs/`, and the
 CVE catalogue from SQLite. If PostgreSQL is unavailable it clearly switches to artefact
 mode. Completed runs are read-only: campaign controls and configuration writes are not
 shown until a real scheduler or configuration service exists.
+The Paths workspace reconstructs prerequisite-linked enterprise attack paths from
+PostgreSQL and replays them as a native Qt graph; it does not calculate an omniscient
+route from hidden topology.
+
+The current random-topology research protocol is documented in
+[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md).
 
 ## Reproducing the environment
 

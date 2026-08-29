@@ -3,6 +3,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Package indexes can be slow on the university/home link. Keep retries
+# bounded but long enough that reproducible image builds do not fail halfway
+# through a wheel download.
+ENV PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
+
 # tk is required by nasim's matplotlib-backed renderer; git for provenance stamping.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential git tk \

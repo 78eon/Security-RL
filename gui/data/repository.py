@@ -185,7 +185,8 @@ class Repository:
         sql = """
             SELECT step_idx, action_name, action_kind, tactic, technique_id,
                    target_subnet, target_host, success, reward, native_reward,
-                   cve_id, cvss_base
+                   cve_id, cvss_base, target_entity, state_changed,
+                   prerequisites, outcomes
             FROM steps WHERE episode_id = %s ORDER BY step_idx
         """
         with self._connect() as conn:
@@ -196,6 +197,8 @@ class Repository:
                 technique_id=r[4], target_subnet=r[5], target_host=r[6],
                 success=r[7], reward=float(r[8]), native_reward=float(r[9]),
                 cve_id=r[10], cvss_base=float(r[11]) if r[11] is not None else None,
+                target_entity=r[12], state_changed=bool(r[13]),
+                prerequisites=list(r[14] or []), outcomes=list(r[15] or []),
             )
             for r in rows
         ]

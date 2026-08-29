@@ -14,6 +14,10 @@ dependencies = [
     "nasim==0.12.0",
     "gymnasium==1.0.0",
     "stable-baselines3==2.9.0",
+    # Official SB3-Contrib implementation of invalid-action masking. The
+    # enterprise catalogue is intentionally fixed-size, so PPO must receive
+    # the AgentKnowledge-derived mask during both training and evaluation.
+    "sb3-contrib==2.9.0",
     # SB3 2.9.0 requires torch>=2.8. CPU wheel is selected in the Dockerfile
     # via the PyTorch CPU index — the full CUDA wheel is ~2.5GB and unusable
     # on the 16GB/no-GPU compute budget (charter R2).

@@ -19,11 +19,16 @@ class FakeRepository:
         assert episode_id == 9
         return [
             SimpleNamespace(
+                step_idx=0,
                 target=(2, 3),
                 action_name="simulated-service-action",
+                action_kind="exploit",
                 technique_id="T1190",
                 cve_id="CVE-2024-3400",
                 success=True,
+                state_changed=True,
+                prerequisites=["known_vulnerability:CVE-2024-3400"],
+                outcomes=["root_access:(2, 3)"],
                 cvss_base=10.0,
             )
         ]
@@ -40,6 +45,14 @@ def test_backend_adapts_stored_steps_to_path_data() -> None:
             "steps": 1,
             "detection": "—",
             "confidence": "100%",
+            "trajectory": [
+                {
+                    "step": 0,
+                    "action": "exploit",
+                    "target": "(2, 3)",
+                    "outcomes": ["root_access:(2, 3)"],
+                }
+            ],
         }
     ]
 

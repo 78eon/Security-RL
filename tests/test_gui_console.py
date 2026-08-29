@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from gui.backend import CampaignData, DashboardData  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
+from gui.views.research_console import TrajectoryGraph  # noqa: E402
 
 
 class FakeBackend:
@@ -71,3 +72,21 @@ def test_dashboard_values_are_rendered_from_backend_snapshot() -> None:
     assert "25.0%" in labels
     assert "EXP-09 · PPO / Large topology" not in labels
     window.close()
+
+
+def test_trace_graph_replays_backend_steps_without_html() -> None:
+    QApplication.instance() or QApplication([])
+    graph = TrajectoryGraph()
+    graph.set_steps(
+        [
+            {"target": "service_entry", "action": "exploit"},
+            {"target": "asset_crown", "action": "access_asset"},
+        ]
+    )
+    assert graph.visible_steps == 2
+    graph.replay()
+    assert graph.visible_steps == 1
+    graph._advance()
+    assert graph.visible_steps == 2
+    assert not graph.timer.isActive()
+    graph.close()

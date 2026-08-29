@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test onprem-train onprem-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -121,6 +121,12 @@ enterprise-demo: ## Typed enterprise discovery and attack-path demonstration
 
 onprem-demo: ## Hidden seeded on-prem discovery and attack-path feasibility demo
 	$(COMPOSE) run --rm app python scripts/onprem_demo.py --seed 2001
+
+onprem-train: ## Train mask-aware PPO across on-prem topology seeds 1-60
+	$(COMPOSE) run --rm app python scripts/train_onprem.py
+
+onprem-eval: ## Evaluate frozen on-prem PPO on held-out seeds 2001-2020
+	$(COMPOSE) run --rm app python scripts/evaluate_onprem.py --split test --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3

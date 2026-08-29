@@ -115,6 +115,17 @@ def test_step_target_is_none_when_unaddressed() -> None:
     assert step.target is None
 
 
+def test_enterprise_entity_target_takes_precedence() -> None:
+    step = StepRow(
+        step_idx=4, action_name="access_asset:asset_crown", action_kind="access_asset",
+        tactic=None, technique_id=None, target_subnet=None, target_host=None,
+        success=True, reward=100.0, native_reward=100.0, cve_id=None,
+        cvss_base=None, target_entity="asset_crown", state_changed=True,
+        prerequisites=["access:database"], outcomes=["asset:asset_crown"],
+    )
+    assert step.target == "asset_crown"
+
+
 # -- topology ---------------------------------------------------------------
 
 

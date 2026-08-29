@@ -220,6 +220,15 @@ class EnterpriseCyberEnv(gym.Env):
             dtype=np.int8,
         )
 
+    def action_masks(self) -> np.ndarray:
+        """MaskablePPO interface, derived exclusively from AgentKnowledge.
+
+        ``_can_execute`` only reads the discovered knowledge state and the
+        opaque action catalogue. Ground-truth topology is never passed to the
+        policy or used to decide which catalogue entries are offered.
+        """
+        return self.valid_action_mask().astype(bool, copy=False)
+
     def _can_execute(self, action: EnterpriseAction) -> tuple[bool, str]:
         known = self.knowledge
         target = action.target
@@ -467,6 +476,7 @@ class EnterpriseCyberEnv(gym.Env):
                 self._reveal_edge(edge.source, edge.target, edge.type)
                 outcomes.append(f"access_target:{edge.target}")
             prerequisites.extend(f"access:{source}" for source in sources)
+            prerequisites.append(f"known_identity:{target}")
             outcomes.append(f"credential:{target}")
         elif kind == EnterpriseActionType.AUTHENTICATE:
             identities = [
@@ -481,6 +491,7 @@ class EnterpriseCyberEnv(gym.Env):
             )
             self._reveal_host_segments(target, outcomes)
             prerequisites.extend(f"credential:{identity}" for identity in identities)
+            prerequisites.append(f"known_target:{target}")
             outcomes.append(f"authenticated:{target}")
         elif kind == EnterpriseActionType.PIVOT:
             sources = [
@@ -493,6 +504,7 @@ class EnterpriseCyberEnv(gym.Env):
             known.reachable.add(target)
             self._reveal_host_segments(target, outcomes)
             prerequisites.extend(f"access:{source}" for source in sources)
+            prerequisites.append(f"known_target:{target}")
             outcomes.append(f"pivoted:{target}")
         elif kind == EnterpriseActionType.ESCALATE_PRIVILEGE:
             known.access[target] = "root"

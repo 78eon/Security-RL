@@ -6,6 +6,7 @@ Pure-logic tests: no training, no database, no display.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -171,6 +172,17 @@ def test_gate_passes_a_well_formed_run(monkeypatch) -> None:
     monkeypatch.setenv("POSTGRES_PASSWORD", "x")
     monkeypatch.setattr(prov, "_internet_reachable", lambda timeout=1.5: False)
     assert prov.run_gate(manifest()).passed
+
+
+@pytest.mark.parametrize("declared", ["", "unknown", "unexpected"])
+def test_unknown_declared_git_state_is_not_treated_as_clean(monkeypatch, declared) -> None:
+    monkeypatch.setenv("RLREDTEAM_GIT_DIRTY", declared)
+    monkeypatch.setattr(
+        prov.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+    assert prov.git_dirty() is None
 
 
 def test_gate_stops_on_a_frozen_hash_mismatch(monkeypatch) -> None:

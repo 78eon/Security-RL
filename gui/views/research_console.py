@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from math import ceil
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -146,6 +146,77 @@ class AttackGraph(QWidget):
             painter.drawText(x + 12, y + 37, f"{size} hosts" + (" · target" if targeted else ""))
 
 
+class TrajectoryGraph(QWidget):
+    """Replay a trace-derived attack path; no topology oracle is consulted."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setMinimumHeight(300)
+        self.steps: list[dict] = []
+        self.visible_steps = 0
+        self.timer = QTimer(self)
+        self.timer.setInterval(450)
+        self.timer.timeout.connect(self._advance)
+
+    def set_steps(self, steps: list[dict]) -> None:
+        self.timer.stop()
+        self.steps = list(steps)
+        self.visible_steps = len(self.steps)
+        self.update()
+
+    def replay(self) -> None:
+        if not self.steps:
+            return
+        self.visible_steps = 1
+        self.timer.start()
+        self.update()
+
+    def _advance(self) -> None:
+        self.visible_steps += 1
+        if self.visible_steps >= len(self.steps):
+            self.visible_steps = len(self.steps)
+            self.timer.stop()
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#081316"))
+        visible = self.steps[: self.visible_steps]
+        if not visible:
+            painter.setPen(QColor("#698087"))
+            painter.drawText(
+                self.rect(), Qt.AlignmentFlag.AlignCenter, "Select a stored attack path"
+            )
+            return
+        columns = min(4, len(visible))
+        rows = ceil(len(visible) / columns)
+        width = max(150, (self.width() - 60) // columns)
+        height = max(90, (self.height() - 40) // rows)
+        points = [
+            (25 + (index % columns) * width, 25 + (index // columns) * height)
+            for index in range(len(visible))
+        ]
+        for index in range(1, len(points)):
+            painter.setPen(QPen(QColor(COLORS["amber"]), 2))
+            painter.drawLine(
+                points[index - 1][0] + 120,
+                points[index - 1][1] + 28,
+                points[index][0],
+                points[index][1] + 28,
+            )
+        for index, (step, (x, y)) in enumerate(zip(visible, points, strict=True)):
+            final = index == len(self.steps) - 1
+            painter.setPen(QPen(QColor(COLORS["red"] if final else COLORS["cyan"]), 2))
+            painter.setBrush(QColor("#0d1d21"))
+            painter.drawRoundedRect(QRectF(x, y, 122, 58), 5, 5)
+            painter.setPen(QColor("#e8f0f1"))
+            painter.drawText(x + 8, y + 20, str(step["target"])[:18])
+            painter.setPen(QColor("#698087"))
+            painter.drawText(x + 8, y + 41, str(step["action"])[:18])
+
+
 class Page(QWidget):
     def __init__(self, eyebrow: str, title: str, action: str = "") -> None:
         super().__init__()
@@ -231,14 +302,26 @@ class PathsPage(Page):
         self.action.clicked.connect(self.refresh)
         self.metrics = Metric("DISCOVERED PATHS", "—", "Waiting for PostgreSQL")
         self.root.addWidget(self.metrics)
+        replay_bar = QHBoxLayout()
+        replay_bar.addWidget(label("TRACE-DERIVED ATTACK GRAPH", "SectionTitle"))
+        replay_bar.addStretch()
+        self.replay_button = button("Replay selected")
+        self.replay_button.clicked.connect(self._replay)
+        replay_bar.addWidget(self.replay_button)
+        self.root.addLayout(replay_bar)
+        self.graph = TrajectoryGraph()
+        self.root.addWidget(self.graph)
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             ["Path", "Target", "Risk", "Steps", "Detection", "Confidence"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.cellClicked.connect(self._select_path)
         self.root.addWidget(self.table)
+        self.paths: list[dict] = []
 
     def apply_paths(self, paths: list[dict]) -> None:
+        self.paths = list(paths)
         fill_table(
             self.table,
             [
@@ -250,6 +333,17 @@ class PathsPage(Page):
             str(len(paths)),
             "No synthetic fallback" if not paths else "Loaded from PostgreSQL steps",
         )
+        self.graph.set_steps(paths[0].get("trajectory", []) if paths else [])
+        if paths:
+            self.table.selectRow(0)
+
+    def _select_path(self, row: int, column: int) -> None:
+        del column
+        if 0 <= row < len(self.paths):
+            self.graph.set_steps(self.paths[row].get("trajectory", []))
+
+    def _replay(self) -> None:
+        self.graph.replay()
 
     def refresh(self) -> None:
         self._task = run_async(

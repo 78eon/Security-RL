@@ -91,6 +91,10 @@ class StepRecord:
     is_crown_jewel: bool = False
     reward_paid: bool = False
     error: str | None = None
+    target_entity: str | None = None
+    state_changed: bool = False
+    prerequisites: list[str] = field(default_factory=list)
+    outcomes: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -107,6 +111,12 @@ class EpisodeRecord:
     mean_cvss_exploited: float | None = None
     max_cvss_exploited: float | None = None
     hosts_compromised: int = 0
+    topology_hash: str | None = None
+    known_nodes: int | None = None
+    true_nodes: int | None = None
+    discovery_coverage: float | None = None
+    invalid_mask_selections: int = 0
+    failed_actions: int = 0
     steps: list[StepRecord] = field(default_factory=list)
 
 
@@ -284,8 +294,10 @@ class EpisodeLogger:
                         experiment_id, run_id, seed, topology_seed, episode_idx,
                         total_reward, native_reward, length, terminal_state,
                         goal_reached, exploited_hosts, mean_cvss_exploited,
-                        max_cvss_exploited, hosts_compromised
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        max_cvss_exploited, hosts_compromised, topology_hash,
+                        known_nodes, true_nodes, discovery_coverage,
+                        invalid_mask_selections, failed_actions
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     RETURNING id
                     """,
                     (
@@ -303,6 +315,12 @@ class EpisodeLogger:
                         record.mean_cvss_exploited,
                         record.max_cvss_exploited,
                         record.hosts_compromised,
+                        record.topology_hash,
+                        record.known_nodes,
+                        record.true_nodes,
+                        record.discovery_coverage,
+                        record.invalid_mask_selections,
+                        record.failed_actions,
                     ),
                 )
                 episode_id = cur.fetchone()[0]
@@ -316,8 +334,12 @@ class EpisodeLogger:
                             success, reward, native_reward, cve_id, cvss_base
                             , cve_term, tactic_term, crown_jewel_term, penalty_term,
                             access_gained, newly_discovered, is_crown_jewel,
-                            reward_paid, error
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            reward_paid, error, target_entity, state_changed,
+                            prerequisites, outcomes
+                        ) VALUES (
+                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                        )
                         """,
                         [
                             (
@@ -343,6 +365,10 @@ class EpisodeLogger:
                                 s.is_crown_jewel,
                                 s.reward_paid,
                                 s.error,
+                                s.target_entity,
+                                s.state_changed,
+                                Jsonb(s.prerequisites),
+                                Jsonb(s.outcomes),
                             )
                             for s in record.steps
                         ],

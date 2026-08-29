@@ -309,6 +309,10 @@ class HybridCurriculumEnv(gym.Env):
         info.update({"topology_seed": self.topology_seed, "family": self.family.value})
         return observation, reward, terminated, truncated, info
 
+    def action_masks(self):
+        """Return the current knowledge-only mask for MaskablePPO."""
+        return self._env.action_masks()
+
     def action_index(self, *args, **kwargs) -> int:
         return self._env.action_index(*args, **kwargs)
 

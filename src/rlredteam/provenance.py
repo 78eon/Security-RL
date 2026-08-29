@@ -59,8 +59,13 @@ def git_dirty() -> bool | None:
     than guessing, because a false "clean" is worse than an honest gap.
     """
     declared = os.environ.get("RLREDTEAM_GIT_DIRTY")
-    if declared is not None:
-        return declared.strip().lower() in ("1", "true", "yes", "dirty")
+    if declared is not None and declared.strip():
+        normalised = declared.strip().lower()
+        if normalised in ("1", "true", "yes", "dirty"):
+            return True
+        if normalised in ("0", "false", "no", "clean"):
+            return False
+        return None
 
     try:
         result = subprocess.run(

@@ -81,9 +81,15 @@ class StepRow:
     native_reward: float
     cve_id: str | None
     cvss_base: float | None
+    target_entity: str | None = None
+    state_changed: bool = False
+    prerequisites: list[str] = field(default_factory=list)
+    outcomes: list[str] = field(default_factory=list)
 
     @property
-    def target(self) -> tuple[int, int] | None:
+    def target(self) -> str | tuple[int, int] | None:
+        if self.target_entity:
+            return self.target_entity
         if self.target_subnet is None or self.target_host is None:
             return None
         return (self.target_subnet, self.target_host)

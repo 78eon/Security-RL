@@ -117,6 +117,7 @@ class ApplicationBackend:
                 if not steps:
                     continue
                 successful = [step for step in steps if step.success]
+                causal = _causal_steps(steps)
                 target = (successful[-1] if successful else steps[-1]).target
                 max_cvss = max(
                     (step.cvss_base for step in steps if step.cvss_base is not None), default=0.0
@@ -138,6 +139,15 @@ class ApplicationBackend:
                         "steps": len(steps),
                         "detection": "—",
                         "confidence": f"{round(100 * len(successful) / len(steps))}%",
+                        "trajectory": [
+                            {
+                                "step": step.step_idx,
+                                "action": step.action_kind,
+                                "target": str(step.target or "environment"),
+                                "outcomes": list(getattr(step, "outcomes", []) or []),
+                            }
+                            for step in causal
+                        ],
                     }
                 )
             return paths
@@ -325,3 +335,59 @@ def _number(value) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _normalise_evidence_atom(atom: str) -> set[str]:
+    prefix, separator, entity = atom.partition(":")
+    if not separator:
+        return {atom}
+    atoms = {atom}
+    if prefix.startswith("known_"):
+        atoms.add(f"known:{entity}")
+    if prefix in {"authenticated", "pivoted", "root_access", "user_access", "read_access"}:
+        atoms.add(f"access:{entity}")
+    if prefix == "discovered":
+        atoms.update({f"known:{entity}", f"reachable:{entity}"})
+    if prefix in {"access_target", "network"}:
+        atoms.add(f"reachable:{entity}")
+    if prefix == "vulnerability":
+        atoms.add(f"known_vulnerability:{entity}")
+    if prefix == "credential_source":
+        atoms.add(f"known:{entity}")
+    return atoms
+
+
+def _causal_steps(steps):
+    """Back-chain a displayed route from persisted evidence, never topology."""
+    progress = [
+        step
+        for step in steps
+        if step.success and getattr(step, "state_changed", True)
+    ]
+    if not progress:
+        return []
+    final = progress[-1]
+    selected = [final]
+    required = {
+        atom
+        for item in (getattr(final, "prerequisites", []) or [])
+        for atom in _normalise_evidence_atom(str(item))
+    }
+    if not required:
+        return progress
+    for step in reversed(progress[:-1]):
+        produced = {
+            atom
+            for item in (getattr(step, "outcomes", []) or [])
+            for atom in _normalise_evidence_atom(str(item))
+        }
+        if not produced & required:
+            continue
+        selected.append(step)
+        required -= produced
+        required.update(
+            atom
+            for item in (getattr(step, "prerequisites", []) or [])
+            for atom in _normalise_evidence_atom(str(item))
+        )
+    return list(reversed(selected))
