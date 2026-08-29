@@ -2,8 +2,7 @@
 
 ## Status
 
-Release candidate. This document is completed with final gate evidence before the phase commit
-is pushed.
+Complete. Implementation commit: `fd87dec`.
 
 ## Objective
 
@@ -95,8 +94,18 @@ service profile, application depth, pivot depth and distractors vary by seed.
 - `make onprem-demo` emits a topology/config hash and successful JSON trajectory while clearly
   labelling the policy as a feasibility oracle, not PPO.
 
-Final repository-wide tests, lint, compilation, GUI regression and Podman validation are
-recorded in the release commit handoff.
+Final release gates:
+
+- full Podman repository suite: **351 passed, 12 skipped** in 144.78 seconds;
+- non-slow Podman suite: **333 passed, 11 skipped, 19 slow tests deselected**;
+- focused Phase 2 suite: **21 passed**, including all 100 preregistered topologies;
+- repository-wide Ruff lint: passed;
+- Python compilation in Podman with bytecode cache directed to `/tmp`: passed;
+- deterministic seed-2001 JSON demo: passed;
+- diff whitespace and secret-pattern review: passed.
+
+The SciPy suite emitted two existing precision-loss warnings for intentionally constant paired
+samples. They are recorded warnings, not Phase 2 failures.
 
 ## Operation
 
