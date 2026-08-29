@@ -1,0 +1,14 @@
+onprem_topology:
+  min_segments: 1
+  max_segments: 5
+  min_hosts: 10
+  max_hosts: 60
+  min_pivots: 0
+  max_pivots: 3
+  min_decoy_services: 1
+  max_decoy_services: 10
+  min_application_hops: 1
+  max_application_hops: 3
+  max_nodes: 96
+  max_vulnerabilities: 8
+  max_steps: 200

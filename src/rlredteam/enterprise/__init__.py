@@ -23,6 +23,13 @@ from rlredteam.enterprise.model import (
     TrueTopology,
     Vulnerability,
 )
+from rlredteam.enterprise.onprem import (
+    OnPremCurriculumEnv,
+    OnPremGeneralisationSplit,
+    OnPremTopologyConfig,
+    generate_onprem_topology,
+    topology_digest,
+)
 from rlredteam.enterprise.state import AgentKnowledge, Observation
 
 __all__ = [
@@ -34,6 +41,9 @@ __all__ = [
     "EnterpriseNode",
     "NodeType",
     "Observation",
+    "OnPremCurriculumEnv",
+    "OnPremGeneralisationSplit",
+    "OnPremTopologyConfig",
     "TrueTopology",
     "GeneralisationSplit",
     "HybridCurriculumEnv",
@@ -42,4 +52,6 @@ __all__ = [
     "Vulnerability",
     "generate_enterprise",
     "generate_hybrid_enterprise",
+    "generate_onprem_topology",
+    "topology_digest",
 ]

@@ -479,6 +479,7 @@ class EnterpriseCyberEnv(gym.Env):
             known.access[target] = (
                 "user" if known.known_node_types[target] in host_types else "read"
             )
+            self._reveal_host_segments(target, outcomes)
             prerequisites.extend(f"credential:{identity}" for identity in identities)
             outcomes.append(f"authenticated:{target}")
         elif kind == EnterpriseActionType.PIVOT:
@@ -490,6 +491,7 @@ class EnterpriseCyberEnv(gym.Env):
             ]
             known.access[target] = "user"
             known.reachable.add(target)
+            self._reveal_host_segments(target, outcomes)
             prerequisites.extend(f"access:{source}" for source in sources)
             outcomes.append(f"pivoted:{target}")
         elif kind == EnterpriseActionType.ESCALATE_PRIVILEGE:
@@ -510,6 +512,12 @@ class EnterpriseCyberEnv(gym.Env):
         changed = before != self._snapshot()
         reward = self._reward(kind, target, changed)
         return True, changed, reward, tuple(prerequisites), tuple(outcomes), ""
+
+    def _reveal_host_segments(self, target: str, outcomes: list[str]) -> None:
+        for edge in self.true_topology.outgoing(target, EdgeType.LOCATED_IN):
+            self._reveal_node(edge.target, reachable=True)
+            self._reveal_edge(edge.source, edge.target, edge.type)
+            outcomes.append(f"network:{edge.target}")
 
     def _reward(self, kind: EnterpriseActionType, target: str, changed: bool) -> float:
         if not changed:

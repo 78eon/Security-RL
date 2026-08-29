@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -118,6 +118,9 @@ rollout:        ## Deterministic random-policy rollout on the frozen topology
 
 enterprise-demo: ## Typed enterprise discovery and attack-path demonstration
 	$(COMPOSE) run --rm app python scripts/enterprise_demo.py --seed 42
+
+onprem-demo: ## Hidden seeded on-prem discovery and attack-path feasibility demo
+	$(COMPOSE) run --rm app python scripts/onprem_demo.py --seed 2001
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3

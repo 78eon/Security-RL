@@ -26,6 +26,7 @@ make db-up                    # start PostgreSQL on :5433
 make test                     # full suite, including Postgres and NASim integration
 make rollout                  # deterministic random-policy rollout
 make enterprise-demo          # typed discovery-to-crown-jewel demonstration
+make onprem-demo              # hidden on-prem topology feasibility trajectory
 make lab-build                # build isolated-range evidence collector
 make train                    # 50k-step PPO pilot on the shaped reward
 
