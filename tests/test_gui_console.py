@@ -89,6 +89,9 @@ def test_simulation_page_renders_backend_result_without_hardcoded_profile() -> N
     assert page.nodes.rowCount() == 1
     assert page.graph.steps[-1]["target"] == "asset"
     assert page.metrics.value.text() == "GOAL REACHED"
+    assert page.replay_button.isEnabled()
+    page.replay_button.click()
+    assert page.graph.visible_steps == 1
     page.close()
 
 

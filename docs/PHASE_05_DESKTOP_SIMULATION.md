@@ -55,6 +55,7 @@ the host.
 - Result contains topology hash, node/edge details, metrics and a causal trace.
 - Hybrid detail contains both legacy and cloud entities.
 - Graph replay uses backend-returned trajectory data.
+- The Simulation workspace exposes an explicit native causal-path replay control.
 - Simulation runs through `QThreadPool`, never the Qt UI thread.
 - Socket-poison test proves the backend demo performs no network access.
 - GUI image, headless GUI suite, backend suite, lint and compilation pass.

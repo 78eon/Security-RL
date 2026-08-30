@@ -381,6 +381,10 @@ class SimulationPage(Page):
         self.run_button.setEnabled(False)
         self.run_button.clicked.connect(self.run)
         controls.layout().addWidget(self.run_button)
+        self.replay_button = button("Replay causal path")
+        self.replay_button.setEnabled(False)
+        self.replay_button.clicked.connect(self.graph_replay)
+        controls.layout().addWidget(self.replay_button)
         self.root.addWidget(controls)
 
         self.summary = label(
@@ -431,6 +435,7 @@ class SimulationPage(Page):
 
     def _completed(self, result) -> None:
         self.run_button.setEnabled(True)
+        self.replay_button.setEnabled(bool(result.trajectory))
         outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
         self.metrics.update_value(
             outcome,
@@ -457,9 +462,13 @@ class SimulationPage(Page):
         )
         self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
 
+    def graph_replay(self) -> None:
+        self.graph.replay()
+
     def _failed(self, error: str, detail: str) -> None:
         del detail
         self.run_button.setEnabled(self.profile.count() > 0)
+        self.replay_button.setEnabled(False)
         self.metrics.update_value("FAILED", error)
         self.notify(f"Simulation failed: {error}")
 
