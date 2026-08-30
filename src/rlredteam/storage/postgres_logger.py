@@ -117,6 +117,7 @@ class EpisodeRecord:
     discovery_coverage: float | None = None
     invalid_mask_selections: int = 0
     failed_actions: int = 0
+    deployment_profile: str | None = None
     steps: list[StepRecord] = field(default_factory=list)
 
 
@@ -296,8 +297,8 @@ class EpisodeLogger:
                         goal_reached, exploited_hosts, mean_cvss_exploited,
                         max_cvss_exploited, hosts_compromised, topology_hash,
                         known_nodes, true_nodes, discovery_coverage,
-                        invalid_mask_selections, failed_actions
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        invalid_mask_selections, failed_actions, deployment_profile
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     RETURNING id
                     """,
                     (
@@ -321,6 +322,7 @@ class EpisodeLogger:
                         record.discovery_coverage,
                         record.invalid_mask_selections,
                         record.failed_actions,
+                        record.deployment_profile,
                     ),
                 )
                 episode_id = cur.fetchone()[0]

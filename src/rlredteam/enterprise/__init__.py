@@ -30,15 +30,23 @@ from rlredteam.enterprise.onprem import (
     generate_onprem_topology,
     topology_digest,
 )
+from rlredteam.enterprise.profiles import (
+    DeploymentProfile,
+    EnterpriseProfileConfig,
+    InfrastructureCurriculumEnv,
+    generate_profile_topology,
+)
 from rlredteam.enterprise.state import AgentKnowledge, Observation
 
 __all__ = [
     "AgentKnowledge",
+    "DeploymentProfile",
     "EdgeType",
     "EnterpriseCyberEnv",
     "EnterpriseGeneratorConfig",
     "EnterpriseGraph",
     "EnterpriseNode",
+    "EnterpriseProfileConfig",
     "NodeType",
     "Observation",
     "OnPremCurriculumEnv",
@@ -49,9 +57,11 @@ __all__ = [
     "HybridCurriculumEnv",
     "HybridFamily",
     "HybridGeneratorConfig",
+    "InfrastructureCurriculumEnv",
     "Vulnerability",
     "generate_enterprise",
     "generate_hybrid_enterprise",
     "generate_onprem_topology",
+    "generate_profile_topology",
     "topology_digest",
 ]

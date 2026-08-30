@@ -1,0 +1,21 @@
+experiment:
+  id: infrastructure-generalisation-v1
+  description: Mask-aware PPO trained across legacy, cloud and hybrid typed graphs
+  training_seed: 43
+  # 196 complete 256-step PPO rollouts; no silent budget rounding.
+  total_timesteps: 50176
+  train_profiles: [legacy, cloud, hybrid]
+  evaluation_episode_seeds: [9101]
+  deterministic_evaluation: true
+  ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+    policy_layers: [128, 128]

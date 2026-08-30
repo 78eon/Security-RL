@@ -429,9 +429,13 @@ def persist_evaluation(
 
     if not episodes:
         raise GeneralisationError("cannot persist an empty evaluation")
-    grouped: dict[tuple[int, int], list[dict]] = {}
+    grouped: dict[tuple[str, int, int], list[dict]] = {}
     for step in steps:
-        key = (int(step["topology_seed"]), int(step["evaluation_seed"]))
+        key = (
+            str(step.get("profile", "on_premises")),
+            int(step["topology_seed"]),
+            int(step["evaluation_seed"]),
+        )
         grouped.setdefault(key, []).append(step)
 
     logger = EpisodeLogger.start(
@@ -456,7 +460,11 @@ def persist_evaluation(
     )
     try:
         for episode_index, episode in enumerate(episodes):
-            key = (int(episode["topology_seed"]), int(episode["evaluation_seed"]))
+            key = (
+                str(episode.get("profile", "on_premises")),
+                int(episode["topology_seed"]),
+                int(episode["evaluation_seed"]),
+            )
             episode_steps = grouped.get(key, [])
             logger.log_episode(
                 EpisodeRecord(
@@ -480,6 +488,7 @@ def persist_evaluation(
                     discovery_coverage=float(episode["discovery_coverage"]),
                     invalid_mask_selections=int(episode["invalid_mask_selections"]),
                     failed_actions=int(episode["failed_actions"]),
+                    deployment_profile=str(episode.get("profile", "on_premises")),
                     steps=[
                         StepRecord(
                             step_idx=int(step["step"]),
@@ -533,17 +542,27 @@ def write_evaluation_package(
         for step in steps:
             handle.write(json.dumps(step, sort_keys=True) + "\n")
     attack_paths = []
-    for topology_seed, evaluation_seed in sorted(
-        {(row["topology_seed"], row["evaluation_seed"]) for row in episodes}
-    ):
+    episode_keys = sorted(
+        {
+            (
+                str(row.get("profile", "on_premises")),
+                row["topology_seed"],
+                row["evaluation_seed"],
+            )
+            for row in episodes
+        }
+    )
+    for profile, topology_seed, evaluation_seed in episode_keys:
         episode_steps = [
             step
             for step in steps
+            if str(step.get("profile", "on_premises")) == profile
             if step["topology_seed"] == topology_seed
             and step["evaluation_seed"] == evaluation_seed
         ]
         attack_paths.append(
             {
+                "profile": profile,
                 "topology_seed": topology_seed,
                 "evaluation_seed": evaluation_seed,
                 "steps": reconstruct_attack_path(episode_steps),
@@ -566,5 +585,20 @@ def write_evaluation_package(
         "mean_reward": sum(row["total_reward"] for row in episodes) / len(episodes),
         "mean_coverage": sum(row["discovery_coverage"] for row in episodes) / len(episodes),
         "invalid_mask_selections": sum(row["invalid_mask_selections"] for row in episodes),
+    }
+    profiles = sorted({str(row.get("profile", "on_premises")) for row in episodes})
+    summary["success_rate_by_profile"] = {
+        profile: (
+            sum(
+                row["goal_reached"]
+                for row in episodes
+                if str(row.get("profile", "on_premises")) == profile
+            )
+            / sum(
+                str(row.get("profile", "on_premises")) == profile
+                for row in episodes
+            )
+        )
+        for profile in profiles
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

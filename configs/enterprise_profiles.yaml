@@ -1,0 +1,35 @@
+enterprise_profiles:
+  min_segments: 1
+  max_segments: 5
+  min_hosts: 10
+  max_hosts: 60
+  min_pivots: 0
+  max_pivots: 3
+  min_decoy_services: 1
+  max_decoy_services: 10
+  max_nodes: 96
+  max_vulnerabilities: 8
+  max_steps: 200
+  profiles:
+    legacy:
+      network_types: [network_segment]
+      host_types: [legacy_host]
+      identity_types: [identity]
+      store_types: [database]
+      control: legacy_firewall
+      boundary: legacy_zone
+    cloud:
+      network_types: [cloud_network]
+      host_types: [cloud_workload]
+      identity_types: [iam_role]
+      store_types: [storage, cloud_resource]
+      control: cloud_security_group
+      boundary: cloud_account
+    hybrid:
+      network_types: [network_segment, cloud_network]
+      host_types: [host, legacy_host, cloud_workload]
+      identity_types: [identity, iam_role]
+      store_types: [database, storage, cloud_resource]
+      control: federated_boundary
+      boundary: legacy_cloud_trust
+
