@@ -165,9 +165,83 @@ podman compose run --rm app python scripts/evaluate_onprem.py \
 - [x] Evaluation emits episode, raw trajectory, causal-path and metadata files.
 - [x] PostgreSQL reconstructs generic enterprise entity trajectories.
 - [x] Native desktop graph replays backend-derived path evidence.
-- [ ] Canonical clean 50,176-step checkpoint completed.
-- [ ] Validation and held-out test packages completed from that checkpoint.
-- [ ] Full release gate and exact evidence recorded below.
+- [x] Canonical clean 50,176-step checkpoint completed.
+- [x] Validation and held-out test packages completed from that checkpoint.
+- [x] Full release gate and exact evidence recorded below.
+
+## Canonical evidence — 2026-08-30
+
+Training identity:
+
+| Field | Value |
+|---|---|
+| Code commit | `c369d4c51c92da31a24b85eadbc2257b1c9d7186` |
+| Working tree at training | clean (`git_dirty: false`) |
+| Actual training steps | 50,176 |
+| Training topology seeds | 1–60 |
+| Experiment config SHA-256 | `228d57a9bfd6eaf4bfbcfb39d973b75211592c3ae06eb09a32ab289900cb2540` |
+| Topology config SHA-256 | `98fa63b38c6412cb84b7f334050f5b3164cd94a82c58cdd900ba6c1c88256411` |
+| Synthetic vulnerability manifest SHA-256 | `586a16454e0daae4c8414f769376770f45432256ba2cad5a86692f0941529363` |
+| Checkpoint SHA-256 | `a38a86c585e5532c5a0478db8f1f5745b9b8a8964b570e95b40ba497c4eb9626` |
+| Policy parameter SHA-256 | `545676ca4c1419c3bff8bdf5464e8876a8164dfd3f6ed5d9ab446da86a4594c4` |
+
+Frozen unseen-topology evaluation:
+
+| Metric | Validation seeds 1001–1020 | Held-out test seeds 2001–2020 |
+|---|---:|---:|
+| Topologies / episodes | 20 / 20 | 20 / 20 |
+| Goal success rate | 100% | 100% |
+| Mean steps to goal | 85.7 | 92.4 |
+| Step range | 34–158 | 36–155 |
+| Mean total reward | 194.6315 | 200.5490 |
+| Mean discovery coverage | 87.62% | 86.98% |
+| Coverage range | 56.52–100% | 48.39–100% |
+| Invalid masked selections | 0 | 0 |
+| Causal path length range | 10–20 | 10–19 |
+| Policy hash unchanged | PASS | PASS |
+| Checkpoint hash matched manifest | PASS | PASS |
+
+PostgreSQL reconstruction:
+
+| Split | Experiment ID | Episodes | Ordered steps | All goals | Status |
+|---|---:|---:|---:|---|---|
+| Validation | 246 | 20 | 1,714 | yes | complete |
+| Test | 247 | 20 | 1,848 | yes | complete |
+
+The desktop backend loaded 12 recent held-out paths from experiment 247. Their
+raw traces contained 37–155 steps, their causal replay graphs contained 11–19
+nodes, and every graph ended at `asset_crown`.
+
+Canonical local artifacts (policy weights remain gitignored and gated):
+
+```text
+runs/onprem-generalisation/
+├── model.zip
+└── training_manifest.json
+
+results/onprem-generalisation/
+├── validation/
+│   ├── episodes.csv
+│   ├── trajectories.jsonl
+│   ├── attack_paths.json
+│   ├── evaluation_metadata.json
+│   └── summary.json
+└── test/
+    ├── episodes.csv
+    ├── trajectories.jsonl
+    ├── attack_paths.json
+    ├── evaluation_metadata.json
+    └── summary.json
+```
+
+Release gates after canonical evaluation:
+
+- full Podman backend suite: 361 passed, 13 skipped, 2 existing SciPy warnings;
+- native GUI suite: 38 passed;
+- Ruff: passed;
+- Python compilation with bytecode redirected to `/tmp`: passed;
+- Podman Compose configuration: passed;
+- checkpoint, policy-freeze, split, PostgreSQL and GUI reconstruction audits: passed.
 
 ## Development evidence (not a research result)
 
