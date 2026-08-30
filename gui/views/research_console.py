@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from math import ceil
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -17,6 +19,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStackedWidget,
     QStatusBar,
     QTableWidget,
@@ -357,6 +360,110 @@ class PathsPage(Page):
         self.notify(f"Loaded {len(paths)} stored attack path(s)")
 
 
+class SimulationPage(Page):
+    """Run and replay a backend-generated, simulation-only enterprise graph."""
+
+    def __init__(self, backend: BackendPort, notify) -> None:
+        super().__init__("OFFLINE TYPED-GRAPH BACKEND", "Enterprise Simulation")
+        self.backend, self.notify = backend, notify
+        controls = panel(QHBoxLayout())
+        controls.layout().addWidget(label("Environment profile", "Muted"))
+        self.profile = QComboBox()
+        self.profile.setMinimumWidth(190)
+        controls.layout().addWidget(self.profile)
+        controls.layout().addWidget(label("Topology seed", "Muted"))
+        self.seed = QSpinBox()
+        self.seed.setRange(0, 2_147_483_647)
+        self.seed.setValue(2001)
+        controls.layout().addWidget(self.seed)
+        controls.layout().addStretch()
+        self.run_button = button("Run offline simulation", "Primary")
+        self.run_button.setEnabled(False)
+        self.run_button.clicked.connect(self.run)
+        controls.layout().addWidget(self.run_button)
+        self.root.addWidget(controls)
+
+        self.summary = label(
+            "Loading backend profiles… · no live discovery or network traffic",
+            "Muted",
+        )
+        self.root.addWidget(self.summary)
+        self.metrics = Metric("SIMULATION STATUS", "READY", "Backend not yet executed")
+        self.root.addWidget(self.metrics)
+        self.graph = TrajectoryGraph()
+        self.root.addWidget(self.graph)
+        self.nodes = QTableWidget(0, 4)
+        self.nodes.setHorizontalHeaderLabels(["Entity", "Type", "Name", "Attributes"])
+        self.nodes.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.root.addWidget(self.nodes)
+
+        if hasattr(self.backend, "simulation_profiles"):
+            self._profiles_task = run_async(
+                self.backend.simulation_profiles,
+                self._profiles_loaded,
+                self._failed,
+            )
+        else:
+            self.summary.setText("Simulation service is not available from this backend")
+
+    def _profiles_loaded(self, profiles: list[dict]) -> None:
+        self.profile.clear()
+        for item in profiles:
+            self.profile.addItem(str(item["label"]), str(item["id"]))
+        self.run_button.setEnabled(bool(profiles))
+        self.summary.setText(
+            f"{len(profiles)} configured simulation profiles · no live network discovery"
+        )
+
+    def run(self) -> None:
+        profile = self.profile.currentData()
+        if not profile:
+            self.notify("No simulation profile is available")
+            return
+        seed = self.seed.value()
+        self.run_button.setEnabled(False)
+        self.metrics.update_value("RUNNING", f"{profile} · seed {seed}")
+        self._simulation_task = run_async(
+            lambda: self.backend.run_simulation(str(profile), seed),
+            self._completed,
+            self._failed,
+        )
+
+    def _completed(self, result) -> None:
+        self.run_button.setEnabled(True)
+        outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
+        self.metrics.update_value(
+            outcome,
+            f"{result.episode_steps} raw steps · {len(result.trajectory)} causal events",
+        )
+        self.summary.setText(
+            f"{result.topology_name} · {len(result.nodes)} entities · "
+            f"{len(result.edges)} relationships · "
+            f"coverage {100 * result.discovery_coverage:.1f}% · "
+            f"hash {result.topology_hash[:12]}… · {result.agent}"
+        )
+        self.graph.set_steps(result.trajectory)
+        fill_table(
+            self.nodes,
+            [
+                (
+                    item["id"],
+                    item["type"],
+                    item["name"],
+                    json.dumps(item["attributes"], sort_keys=True),
+                )
+                for item in result.nodes
+            ],
+        )
+        self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
+
+    def _failed(self, error: str, detail: str) -> None:
+        del detail
+        self.run_button.setEnabled(self.profile.count() > 0)
+        self.metrics.update_value("FAILED", error)
+        self.notify(f"Simulation failed: {error}")
+
+
 class CampaignsPage(Page):
     def __init__(self) -> None:
         super().__init__("STORED RUN ARTEFACTS", "Training campaign history")
@@ -522,7 +629,7 @@ class SettingsPage(Page):
         box = panel(QFormLayout())
         self.database = label("Loading…", "Muted")
         self.mode = label("Loading…", "Muted")
-        self.boundary = label("NaSim/CybORG simulation only", "Muted")
+        self.boundary = label("Offline typed graph / NASim only", "Muted")
         box.layout().addRow("PostgreSQL", self.database)
         box.layout().addRow("Data mode", self.mode)
         box.layout().addRow("Execution boundary", self.boundary)
@@ -542,6 +649,7 @@ class SettingsPage(Page):
 class MainWindow(QMainWindow):
     PAGE_DATA = [
         ("Overview", "Attack Path Discovery"),
+        ("Simulation", "Enterprise Simulation"),
         ("Attack Paths", "Attack Paths"),
         ("Live Campaigns", "Campaign History"),
         ("Agent Lab", "Agent Lab"),
@@ -579,7 +687,7 @@ class MainWindow(QMainWindow):
         nav.addStretch()
         safety = panel(QVBoxLayout())
         safety.layout().addWidget(label("✓  SIMULATION BOUNDARY", "Eyebrow"))
-        safety.layout().addWidget(label("NaSim / CybORG only", "Muted"))
+        safety.layout().addWidget(label("Offline graph / NASim only", "Muted"))
         nav.addWidget(safety)
         shell.addWidget(sidebar)
         content = QWidget()
@@ -597,6 +705,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages = [
             OverviewPage(self.notify),
+            SimulationPage(self.backend, self.notify),
             PathsPage(self.backend, self.notify),
             CampaignsPage(),
             AgentLabPage(),
@@ -629,7 +738,7 @@ class MainWindow(QMainWindow):
             apply = getattr(page, "apply", None)
             if apply:
                 apply(data)
-        self.pages[1].apply_paths(data.paths)
+        self.pages[2].apply_paths(data.paths)
         self.statusBar().showMessage(data.source_status)
 
     def select_page(self, index: int) -> None:

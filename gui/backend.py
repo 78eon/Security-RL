@@ -63,6 +63,22 @@ class DatasetData:
 
 
 @dataclass(frozen=True, slots=True)
+class SimulationData:
+    profile: str
+    topology_seed: int
+    topology_hash: str
+    topology_name: str
+    nodes: list[dict]
+    edges: list[dict]
+    trajectory: list[dict]
+    goal_reached: bool
+    episode_steps: int
+    total_reward: float
+    discovery_coverage: float
+    agent: str = "Knowledge-only deterministic feasibility agent"
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardData:
     source_status: str
     run_name: str = "No stored runs"
@@ -87,6 +103,8 @@ class DashboardData:
 class BackendPort(Protocol):
     def load_dashboard(self) -> DashboardData: ...
     def refresh_paths(self) -> list[dict]: ...
+    def simulation_profiles(self) -> list[dict]: ...
+    def run_simulation(self, profile: str, topology_seed: int) -> SimulationData: ...
     def export_report(self) -> str: ...
 
 
@@ -104,6 +122,100 @@ class ApplicationBackend:
 
     def save_agent_config(self, config: dict) -> None:
         raise RuntimeError("run snapshots are read-only; no configuration service is configured")
+
+    def simulation_profiles(self) -> list[dict]:
+        """Return backend-supported simulation profiles, never nearby networks."""
+        from rlredteam.enterprise.profiles import DeploymentProfile
+
+        labels = {
+            DeploymentProfile.ON_PREMISES: "On-premises",
+            DeploymentProfile.LEGACY: "Legacy estate",
+            DeploymentProfile.CLOUD: "Cloud estate",
+            DeploymentProfile.HYBRID: "Hybrid estate",
+        }
+        return [
+            {"id": profile.value, "label": labels[profile]}
+            for profile in DeploymentProfile
+        ]
+
+    def run_simulation(self, profile: str, topology_seed: int) -> SimulationData:
+        """Execute one offline graph episode for native GUI replay.
+
+        This is a deterministic feasibility demonstration, not a research
+        evaluation and not a live network scan. The blocking call is invoked
+        through the GUI's worker pool.
+        """
+        from rlredteam.enterprise.environment import EnterpriseCyberEnv
+        from rlredteam.enterprise.onprem import knowledge_policy_action, topology_digest
+        from rlredteam.enterprise.profiles import (
+            DeploymentProfile,
+            EnterpriseProfileConfig,
+            generate_profile_topology,
+        )
+        from rlredteam.enterprise.trajectory import reconstruct_attack_path
+
+        if isinstance(topology_seed, bool) or not 0 <= int(topology_seed) <= 2_147_483_647:
+            raise ValueError("topology seed must be an integer between 0 and 2147483647")
+        selected = DeploymentProfile(profile)
+        config = EnterpriseProfileConfig.from_yaml()
+        topology = generate_profile_topology(selected, int(topology_seed), config)
+        env = EnterpriseCyberEnv(
+            topology,
+            max_steps=config.max_steps,
+            max_nodes=config.max_nodes,
+            max_vulnerabilities=config.max_vulnerabilities,
+        )
+        env.reset(seed=int(topology_seed))
+        terminated = truncated = False
+        reward_total = 0.0
+        rows: list[dict] = []
+        while not (terminated or truncated):
+            action = knowledge_policy_action(env)
+            _, reward, terminated, truncated, info = env.step(action)
+            reward_total += float(reward)
+            event = info["event"]
+            rows.append(
+                {
+                    "step": event.step,
+                    "action": event.action.name,
+                    "action_kind": event.action.type.value,
+                    "target_entity": event.action.target,
+                    "target": event.action.target,
+                    "success": event.success,
+                    "state_changed": event.state_changed,
+                    "reward": event.reward,
+                    "prerequisites": list(event.prerequisites),
+                    "outcomes": list(event.outcomes),
+                    "goal_reached": event.goal_reached,
+                }
+            )
+        causal = reconstruct_attack_path(rows)
+        nodes = [
+            {
+                "id": item.id,
+                "type": item.type.value,
+                "name": item.name,
+                "attributes": dict(item.attributes),
+            }
+            for item in sorted(topology.nodes.values(), key=lambda item: item.id)
+        ]
+        edges = [
+            {"source": edge.source, "target": edge.target, "type": edge.type.value}
+            for edge in topology.edges
+        ]
+        return SimulationData(
+            profile=selected.value,
+            topology_seed=int(topology_seed),
+            topology_hash=topology_digest(topology),
+            topology_name=topology.name,
+            nodes=nodes,
+            edges=edges,
+            trajectory=causal,
+            goal_reached=bool(terminated and not truncated),
+            episode_steps=len(rows),
+            total_reward=reward_total,
+            discovery_coverage=len(env.knowledge.discovered) / len(topology.nodes),
+        )
 
     def refresh_paths(self) -> list[dict]:
         for run in self.repository.list_runs():

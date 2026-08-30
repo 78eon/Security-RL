@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from types import SimpleNamespace
 
 import pytest
@@ -77,3 +78,36 @@ def test_backend_exports_existing_analysis_artifact() -> None:
     path = ApplicationBackend(repository=FakeRepository()).export_report()
 
     assert path.endswith("runs/_analysis/results_table.txt")
+
+
+def test_backend_profiles_come_from_enterprise_model() -> None:
+    profiles = ApplicationBackend(repository=FakeRepository()).simulation_profiles()
+
+    assert [item["id"] for item in profiles] == [
+        "on_premises",
+        "legacy",
+        "cloud",
+        "hybrid",
+    ]
+
+
+def test_backend_runs_typed_graph_simulation_without_network(monkeypatch) -> None:
+    def refuse(*args, **kwargs):
+        raise AssertionError("desktop simulation attempted network access")
+
+    monkeypatch.setattr(socket, "socket", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    result = ApplicationBackend(repository=FakeRepository()).run_simulation("hybrid", 2001)
+
+    assert result.profile == "hybrid"
+    assert result.topology_seed == 2001
+    assert result.goal_reached
+    assert len(result.topology_hash) == 64
+    assert {node["type"] for node in result.nodes} >= {
+        "legacy_host",
+        "cloud_workload",
+        "cloud_network",
+        "network_segment",
+    }
+    assert result.trajectory[-1]["action_kind"] == "access_asset"
+    assert len(result.trajectory) < result.episode_steps

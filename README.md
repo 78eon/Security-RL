@@ -3,13 +3,13 @@
 Simulation-only reinforcement learning agent for attack-path discovery on randomised
 enterprise topologies, with a CVE/CVSS-severity-weighted reward.
 
-The next research phase adds a typed, partial-observable on-prem enterprise simulator covering
+The enterprise simulator provides typed, partially observable on-premises, legacy, cloud and
+hybrid profiles covering
 network segments, hosts, services, applications, APIs, identities, databases, security
 controls and data assets. `TrueTopology`, `AgentKnowledge` and `Observation` are explicit
 separate layers, and opaque discovery-order action slots do not reveal hidden entity names or
-counts. Its Nmap/OpenVAS-like actions are offline graph-state transitions, never live scanning.
-The fixed NASim topology remains the experiment control; cloud/hybrid modelling is deferred
-until unseen on-prem topology evaluation is reproducible.
+counts. Discovery actions are offline graph-state transitions, never live scanning. The fixed
+NASim topology remains the experiment control.
 
 An unprivileged, scope-gated backend is also provided for evidence collection in an explicitly
 authorized isolated hybrid lab. It performs conservative discovery and imports Greenbone
@@ -29,6 +29,8 @@ make enterprise-demo          # typed discovery-to-crown-jewel demonstration
 make onprem-demo              # hidden on-prem topology feasibility trajectory
 make onprem-train             # mask-aware PPO over training topology seeds 1-60
 make onprem-eval              # frozen evaluation on held-out seeds + PostgreSQL
+make infrastructure-train     # train across legacy/cloud/hybrid profiles
+make infrastructure-eval      # frozen held-out evaluation for every profile
 make lab-build                # build isolated-range evidence collector
 make train                    # 50k-step PPO pilot on the shaped reward
 
@@ -47,9 +49,13 @@ shown until a real scheduler or configuration service exists.
 The Paths workspace reconstructs prerequisite-linked enterprise attack paths from
 PostgreSQL and replays them as a native Qt graph; it does not calculate an omniscient
 route from hidden topology.
+The Simulation workspace lets a demonstrator choose a configured enterprise profile and
+topology seed, runs the actual offline Python backend on a Qt worker, and displays the
+generated entities and trace-derived path. It does not enumerate nearby or real networks.
 
-The current random-topology research protocol is documented in
-[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md).
+The random-topology and cross-profile protocols are documented in
+[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md) and
+[Phase 4](docs/PHASE_04_INFRASTRUCTURE_PROFILES.md).
 
 ## Reproducing the environment
 

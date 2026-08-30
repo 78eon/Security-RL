@@ -9,12 +9,18 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
-from gui.backend import CampaignData, DashboardData  # noqa: E402
+from gui.backend import CampaignData, DashboardData, SimulationData  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
-from gui.views.research_console import TrajectoryGraph  # noqa: E402
+from gui.views.research_console import SimulationPage, TrajectoryGraph  # noqa: E402
 
 
 class FakeBackend:
+    def simulation_profiles(self) -> list[dict]:
+        return [{"id": "hybrid", "label": "Hybrid estate"}]
+
+    def run_simulation(self, profile: str, topology_seed: int) -> SimulationData:
+        return simulation_result(profile, topology_seed)
+
     def pause_campaign(self, campaign_id: str) -> None:
         pass
 
@@ -31,12 +37,35 @@ class FakeBackend:
         return "runs/_analysis/results_table.txt"
 
 
-def test_all_eight_desktop_workspaces_navigate() -> None:
+def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationData:
+    return SimulationData(
+        profile=profile,
+        topology_seed=seed,
+        topology_hash="a" * 64,
+        topology_name=f"enterprise-{profile}-seed-{seed}",
+        nodes=[{"id": "asset", "type": "asset", "name": "Data", "attributes": {}}],
+        edges=[],
+        trajectory=[
+            {
+                "step": 1,
+                "action": "access_asset:asset",
+                "action_kind": "access_asset",
+                "target": "asset",
+            }
+        ],
+        goal_reached=True,
+        episode_steps=10,
+        total_reward=100.0,
+        discovery_coverage=1.0,
+    )
+
+
+def test_all_nine_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 8
-    assert len(window.nav_buttons) == 8
+    assert window.stack.count() == 9
+    assert len(window.nav_buttons) == 9
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()
@@ -45,8 +74,22 @@ def test_all_eight_desktop_workspaces_navigate() -> None:
 
     labels = [item.text() for item in window.findChildren(QLabel)]
     assert "✓  SIMULATION BOUNDARY" in labels
-    assert "NaSim / CybORG only" in labels
+    assert "Offline graph / NASim only" in labels
     window.close()
+
+
+def test_simulation_page_renders_backend_result_without_hardcoded_profile() -> None:
+    app = QApplication.instance() or QApplication([])
+    page = SimulationPage(FakeBackend(), lambda message: None)
+    page._profiles_loaded([{"id": "hybrid", "label": "Hybrid estate"}])
+    page._completed(simulation_result())
+    app.processEvents()
+
+    assert page.profile.currentData() == "hybrid"
+    assert page.nodes.rowCount() == 1
+    assert page.graph.steps[-1]["target"] == "asset"
+    assert page.metrics.value.text() == "GOAL REACHED"
+    page.close()
 
 
 def test_dashboard_values_are_rendered_from_backend_snapshot() -> None:

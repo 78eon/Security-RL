@@ -3,3 +3,8 @@
 PySide6==6.11.1
 psycopg[binary]==3.2.3
 pytest==8.3.4
+# Offline enterprise simulation used by the native demo workspace. PPO/torch
+# remain confined to the training image; this adds no live-network tooling.
+gymnasium==1.0.0
+numpy==2.1.3
+pyyaml==6.0.2
