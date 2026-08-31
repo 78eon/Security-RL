@@ -379,6 +379,19 @@ def test_convergence_amendment_changes_only_the_stability_rule(protocol: dict) -
     assert amended["convergence"]["method"] == "block_means_v2"
 
 
+def test_pilot_protocol_changes_only_declared_seed_sets() -> None:
+    final = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    pilot = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_pilot.yaml")
+    final_evaluation = final.pop("evaluation")
+    pilot_evaluation = pilot.pop("evaluation")
+
+    assert pilot == final
+    assert pilot_evaluation | {
+        "seeds": final_evaluation["seeds"],
+        "episode_seeds": final_evaluation["episode_seeds"],
+    } == final_evaluation
+
+
 # -- CP-27/28 metrics and statistics ----------------------------------------
 
 

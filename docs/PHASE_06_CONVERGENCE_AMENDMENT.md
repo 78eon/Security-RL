@@ -94,6 +94,37 @@ not show learning, stop the grid and investigate the PPO setup using only the
 excluded development seed. Final seeds and evaluation seeds must not be used
 for tuning.
 
+## 200k pilot result and administrative correction
+
+The two policies completed training and frozen evaluation. Packaging then
+failed closed because the pilot configuration declared development training
+seed 32 and evaluation seeds 901–910, while its metrics file still declared the
+final seed sets 42–51 and 1001–1010. The resulting analysis correctly reported
+`complete: false`. The mismatch did not affect PPO inputs, environment steps,
+checkpoint contents or evaluation actions, but it makes that first package
+administratively incomplete.
+
+The original frozen manifest is retained as
+`frozen_experiment_01_convergence_pilot_attempt1.json`. A configuration-contract
+check now rejects any future mismatch before training. The corrected pilot
+metrics file changes only the declared seed lists; all outcome definitions,
+statistics and stability thresholds are byte-for-byte equivalent in parsed
+content.
+
+Observed preregistered decision fields from the 200k attempt:
+
+| Arm | Episodes | First→last 20% gain | v2 stability | Frozen evaluation |
+|---|---:|---:|---|---|
+| Sparse | 1,547 | +85.59% | FAIL | PASS |
+| Shaped | 2,471 | +142.64% | PASS | PASS |
+
+Both arms demonstrated learning and the runtime projects below two hours, but
+sparse failed all three v2 stability checks. Therefore the preregistered rule
+forbids the final 200k grid. The next allowed action is a from-scratch 400k
+pilot extension using the same excluded seeds and unchanged thresholds. It is
+defined in `experiment_01_convergence_pilot_400k.yaml` and must be frozen from
+a clean commit before execution.
+
 ## Full amended experiment
 
 If the pilot passes, run `experiment_01_amendment` at the preregistered 200k

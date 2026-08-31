@@ -63,6 +63,7 @@ class ExperimentConfig:
             metrics=REPO_ROOT / raw["metrics"],
         )
         config.validate()
+        config.validate_metrics_protocol()
         return config
 
     def validate(self) -> None:
@@ -78,6 +79,26 @@ class ExperimentConfig:
             raise ExperimentError("training and evaluation seeds must be disjoint")
         if self.training_timesteps <= 0:
             raise ExperimentError("training_timesteps must be positive")
+
+    def validate_metrics_protocol(self) -> None:
+        """Require config and analysis to name the same experimental units."""
+        if not self.metrics.is_file():
+            raise ExperimentError(f"missing metrics protocol: {self.metrics}")
+        protocol = yaml.safe_load(self.metrics.read_text())
+        evaluation = protocol.get("evaluation", {})
+        mismatches = []
+        if tuple(evaluation.get("seeds", ())) != self.training_seeds:
+            mismatches.append(
+                f"training seeds config={list(self.training_seeds)}, "
+                f"metrics={evaluation.get('seeds')}"
+            )
+        if tuple(evaluation.get("episode_seeds", ())) != self.evaluation_seeds:
+            mismatches.append(
+                f"evaluation seeds config={list(self.evaluation_seeds)}, "
+                f"metrics={evaluation.get('episode_seeds')}"
+            )
+        if mismatches:
+            raise ExperimentError("metrics protocol mismatch:\n  " + "\n  ".join(mismatches))
 
     def run_name(self, arm: str, seed: int) -> str:
         return f"{self.experiment_id}-{arm}-s{seed}-t{self.topology_seed}"

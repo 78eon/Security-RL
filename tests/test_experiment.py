@@ -61,6 +61,13 @@ def test_convergence_pilot_is_excluded_from_amended_final_seeds() -> None:
     assert pilot.topology_seed == final.topology_seed == 42
 
 
+def test_experiment_rejects_metrics_seed_contract_mismatch(tmp_path) -> None:
+    settings = config(tmp_path, training_seeds=(32,), evaluation_seeds=(901,))
+
+    with pytest.raises(ExperimentError, match="metrics protocol mismatch"):
+        settings.validate_metrics_protocol()
+
+
 def test_overlapping_training_and_evaluation_seeds_are_rejected(tmp_path) -> None:
     with pytest.raises(ExperimentError, match="disjoint"):
         config(tmp_path, evaluation_seeds=(42,)).validate()
