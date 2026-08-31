@@ -112,9 +112,12 @@ passing research evidence gate.
 - `make onprem-verify`: PASS, including live PostgreSQL reconstruction;
 - focused completion verifier: 2 passed in 2.30 seconds;
 - focused on-prem test group: 29 passed; measured runtime 7h40m52s;
-- Ruff for the new verifier, CLI and tests: PASS after formatting correction;
-- full clean Podman suite, GUI suite, Python compilation and Compose validation:
-  recorded in the completion commit after the final gate.
+- full clean Podman backend suite: 403 passed, 13 skipped and two known
+  numerical-precision warnings in 168.51 seconds;
+- native PySide6 GUI suite: 41 passed in 0.77 seconds;
+- Ruff across source, GUI, tests, tools and scripts: PASS;
+- Python compilation with `PYTHONPYCACHEPREFIX` redirected to `/tmp`: PASS;
+- Podman Compose configuration validation: PASS.
 
 The unusually long focused run included real training tests. Operators should
 use `tests/test_onprem_completion.py` for the fast evidence-integrity check and
