@@ -63,6 +63,32 @@ def test_optimizer_pilot_is_excluded_and_changes_only_schedule() -> None:
     assert pilot.topology_seed == final.topology_seed == 42
 
 
+def test_fixed_budget_study_matches_proposal_seed_set_and_selected_schedule() -> None:
+    study = ExperimentConfig.from_yaml(
+        REPO_ROOT / "configs" / "experiments" / "experiment_01_fixed_budget.yaml"
+    )
+
+    assert study.training_seeds == tuple(range(42, 52))
+    assert study.evaluation_seeds == tuple(range(1001, 1011))
+    assert study.training_timesteps == 200_000
+    assert study.learning_rate_schedule == "linear_to_zero"
+    assert study.topology_seed == 42
+
+
+def test_fixed_budget_design_must_match_experiment_controls(tmp_path) -> None:
+    settings = config(
+        tmp_path,
+        training_seeds=tuple(range(42, 52)),
+        evaluation_seeds=tuple(range(1001, 1011)),
+        training_timesteps=100_000,
+        learning_rate_schedule="linear_to_zero",
+        metrics=REPO_ROOT / "configs" / "metrics_fixed_budget.yaml",
+    )
+
+    with pytest.raises(ExperimentError, match="training_budget_timesteps"):
+        settings.validate_metrics_protocol()
+
+
 def test_unknown_optimizer_schedule_fails_closed(tmp_path) -> None:
     with pytest.raises(ExperimentError, match="unknown learning-rate schedule"):
         config(tmp_path, learning_rate_schedule="adaptive_after_results").validate()

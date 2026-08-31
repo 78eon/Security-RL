@@ -13,8 +13,8 @@ NASim topology remains the experiment control.
 
 An unprivileged, scope-gated backend is also provided for evidence collection in an explicitly
 authorized isolated hybrid lab. It performs conservative discovery and imports Greenbone
-reports; it does not autonomously exploit systems. See
-[the hybrid lab runbook](docs/HYBRID_LAB_RUNBOOK.md).
+reports; it does not autonomously exploit systems. Local operating notes are intentionally
+kept outside the published repository.
 
 
 ## Quick start
@@ -54,10 +54,23 @@ The Simulation workspace lets a demonstrator choose a configured enterprise prof
 topology seed, runs the actual offline Python backend on a Qt worker, and displays the
 generated entities and trace-derived path. It does not enumerate nearby or real networks.
 
-The random-topology and cross-profile protocols are documented in
-[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md), its
-[completion audit](docs/PHASE_03_COMPLETION_AUDIT.md), and
-[Phase 4](docs/PHASE_04_INFRASTRUCTURE_PROFILES.md).
+Random-topology and cross-profile protocols are enforced by their committed experiment
+configurations, manifests and tests; detailed research notes remain local.
+
+## Fixed-budget research experiment
+
+The prospective 200,000-step sparse-versus-shaped protocol is declared in
+`configs/experiments/experiment_01_fixed_budget.yaml`. After its frozen manifest is committed,
+validate or execute it entirely inside Podman:
+
+```bash
+podman compose run --rm app python scripts/run_experiment.py \
+  --config configs/experiments/experiment_01_fixed_budget.yaml --dry-run
+podman compose run --rm app python scripts/run_experiment.py \
+  --config configs/experiments/experiment_01_fixed_budget.yaml
+```
+
+Generated checkpoints and results remain local and gitignored.
 
 ## Reproducing the environment
 

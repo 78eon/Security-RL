@@ -12,7 +12,9 @@ import pytest
 
 from rlredteam import provenance as prov
 from rlredteam.analyse import (
+    analyse,
     assess_convergence,
+    format_table,
     load_protocol,
     metrics_for_run,
     paired_comparison,
@@ -403,6 +405,68 @@ def test_optimizer_pilot_protocol_changes_only_declared_seed_sets() -> None:
         "seeds": final_evaluation["seeds"],
         "episode_seeds": final_evaluation["episode_seeds"],
     } == final_evaluation
+
+
+def test_fixed_budget_protocol_adds_only_a_prospective_design() -> None:
+    amended = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    fixed_budget = load_protocol(REPO_ROOT / "configs" / "metrics_fixed_budget.yaml")
+    design = fixed_budget.pop("design")
+
+    assert fixed_budget == amended
+    assert design["protocol_version"] == "fixed_budget_v1"
+    assert design["analysis_population"] == "all_completed_planned_runs"
+    assert design["convergence_role"] == "diagnostic_only"
+    assert design["prior_lower_budget_exposure"] == "disclosed"
+
+
+def test_fixed_budget_design_rejects_convergence_filtering(tmp_path: Path) -> None:
+    source = (REPO_ROOT / "configs" / "metrics_fixed_budget.yaml").read_text()
+    invalid = tmp_path / "metrics.yaml"
+    invalid.write_text(source.replace("diagnostic_only", "exclude_failed_runs"))
+
+    with pytest.raises(ValueError, match="invalid fixed-budget design"):
+        load_protocol(invalid)
+
+
+def test_fixed_budget_analysis_retains_non_stable_completed_runs() -> None:
+    fixed_budget = load_protocol(REPO_ROOT / "configs" / "metrics_fixed_budget.yaml")
+    runs = []
+    for seed in (42, 43):
+        offset = seed - 42
+        for arm, value in (
+            ("sparse", -10.0 - offset),
+            ("shaped", 20.0 + 2 * offset),
+        ):
+            runs.append(
+                metrics_for_run(
+                    f"{arm}-{seed}",
+                    arm,
+                    seed,
+                    42,
+                    episodes_from([value] * 10),
+                    fixed_budget,
+                    training_episodes=episodes_from(
+                        [-500.0 + 4.0 * index for index in range(100)]
+                    ),
+                )
+            )
+    fixed_budget["evaluation"]["seeds"] = [42, 43]
+
+    report = analyse(runs, fixed_budget)
+
+    assert len(report["not_converged"]) == 4
+    assert report["comparisons"][0]["n_pairs"] == 2
+    assert report["fixed_budget_interpretation"] == {
+        "protocol_version": "fixed_budget_v1",
+        "estimand": "frozen_policy_performance_after_fixed_training_budget",
+        "unit_of_analysis": "training_seed",
+        "analysis_population": "all_completed_planned_runs",
+        "convergence_role": "diagnostic_only",
+        "all_planned_pairs_present": True,
+        "training_stability_warning": True,
+        "status": "complete_with_training_stability_warning",
+    }
+    assert "TRAINING STABILITY WARNING (diagnostic" in format_table(report)
 
 
 # -- CP-27/28 metrics and statistics ----------------------------------------

@@ -23,7 +23,57 @@ DEFAULT_METRICS_CONFIG = REPO_ROOT / "configs" / "metrics.yaml"
 
 
 def load_protocol(path: Path = DEFAULT_METRICS_CONFIG) -> dict:
-    return yaml.safe_load(Path(path).read_text())
+    protocol = yaml.safe_load(Path(path).read_text())
+    validate_protocol(protocol)
+    return protocol
+
+
+def validate_protocol(protocol: dict) -> None:
+    """Fail closed on fixed-budget designs that could enable post-hoc filtering."""
+    if not isinstance(protocol, dict):
+        raise ValueError("metrics protocol must be a mapping")
+    design = protocol.get("design")
+    if design is None:  # Historical protocols remain byte-for-byte interpretable.
+        return
+    if not isinstance(design, dict):
+        raise ValueError("metrics design must be a mapping")
+    required = {
+        "protocol_version",
+        "estimand",
+        "unit_of_analysis",
+        "analysis_population",
+        "convergence_role",
+        "training_budget_timesteps",
+        "learning_rate_schedule",
+        "topology_seed",
+        "prior_lower_budget_exposure",
+    }
+    missing = sorted(required - set(design))
+    if missing:
+        raise ValueError(f"fixed-budget design missing fields: {', '.join(missing)}")
+    expected = {
+        "protocol_version": "fixed_budget_v1",
+        "estimand": "frozen_policy_performance_after_fixed_training_budget",
+        "unit_of_analysis": "training_seed",
+        "analysis_population": "all_completed_planned_runs",
+        "convergence_role": "diagnostic_only",
+        "prior_lower_budget_exposure": "disclosed",
+    }
+    mismatches = [
+        f"{key}={design.get(key)!r}; expected {value!r}"
+        for key, value in expected.items()
+        if design.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError("invalid fixed-budget design: " + "; ".join(mismatches))
+    if not isinstance(design["training_budget_timesteps"], int) or design[
+        "training_budget_timesteps"
+    ] <= 0:
+        raise ValueError("fixed-budget training_budget_timesteps must be positive")
+    if design["learning_rate_schedule"] not in ("constant", "linear_to_zero"):
+        raise ValueError("invalid fixed-budget learning_rate_schedule")
+    if not isinstance(design["topology_seed"], int):
+        raise ValueError("fixed-budget topology_seed must be an integer")
 
 
 # -- per-run metrics --------------------------------------------------------
@@ -427,7 +477,11 @@ def analyse(
             comparisons.append(paired_comparison(metric, a, b, protocol).to_dict())
 
     not_converged = [r.run_name for r in runs if not r.converged]
-    return {
+    expected_seeds = set(protocol["evaluation"]["seeds"])
+    complete = all(
+        expected_seeds <= set(by_arm.get(arm, {})) for arm in (arm_a, arm_b)
+    )
+    report = {
         "protocol": protocol,
         "arms": {arm_a: len(by_arm.get(arm_a, {})), arm_b: len(by_arm.get(arm_b, {}))},
         "runs": [r.to_dict() for r in runs],
@@ -436,11 +490,27 @@ def analyse(
         # CP-26: completeness is reported, so a missing seed is visible rather
         # than quietly reducing n.
         "expected_seeds": protocol["evaluation"]["seeds"],
-        "complete": all(
-            set(protocol["evaluation"]["seeds"]) <= set(by_arm.get(arm, {}))
-            for arm in (arm_a, arm_b)
-        ),
+        "complete": complete,
     }
+    design = protocol.get("design")
+    if design:
+        report["fixed_budget_interpretation"] = {
+            "protocol_version": design["protocol_version"],
+            "estimand": design["estimand"],
+            "unit_of_analysis": design["unit_of_analysis"],
+            "analysis_population": design["analysis_population"],
+            "convergence_role": design["convergence_role"],
+            "all_planned_pairs_present": complete,
+            "training_stability_warning": bool(not_converged),
+            "status": (
+                "complete_with_training_stability_warning"
+                if complete and not_converged
+                else "complete"
+                if complete
+                else "incomplete"
+            ),
+        }
+    return report
 
 
 def format_table(report: dict) -> str:
@@ -467,7 +537,15 @@ def format_table(report: dict) -> str:
         )
     if report["not_converged"]:
         lines.append("")
-        lines.append(f"NOT CONVERGED: {', '.join(report['not_converged'])}")
+        interpretation = report.get("fixed_budget_interpretation", {})
+        if interpretation.get("convergence_role") == "diagnostic_only":
+            lines.append(
+                "TRAINING STABILITY WARNING (diagnostic; runs retained by the "
+                "preregistered fixed-budget estimand): "
+                + ", ".join(report["not_converged"])
+            )
+        else:
+            lines.append(f"NOT CONVERGED: {', '.join(report['not_converged'])}")
     if not report["complete"]:
         lines.append("")
         lines.append("INCOMPLETE: not every expected seed is present in both arms")

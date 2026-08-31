@@ -90,7 +90,10 @@ class ExperimentConfig:
         """Require config and analysis to name the same experimental units."""
         if not self.metrics.is_file():
             raise ExperimentError(f"missing metrics protocol: {self.metrics}")
-        protocol = yaml.safe_load(self.metrics.read_text())
+        try:
+            protocol = load_protocol(self.metrics)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExperimentError(f"invalid metrics protocol: {exc}") from exc
         evaluation = protocol.get("evaluation", {})
         mismatches = []
         if tuple(evaluation.get("seeds", ())) != self.training_seeds:
@@ -103,6 +106,19 @@ class ExperimentConfig:
                 f"evaluation seeds config={list(self.evaluation_seeds)}, "
                 f"metrics={evaluation.get('episode_seeds')}"
             )
+        design = protocol.get("design")
+        if design:
+            controlled_fields = {
+                "training_budget_timesteps": self.training_timesteps,
+                "learning_rate_schedule": self.learning_rate_schedule,
+                "topology_seed": self.topology_seed,
+            }
+            for field_name, expected in controlled_fields.items():
+                if design.get(field_name) != expected:
+                    mismatches.append(
+                        f"{field_name} config={expected!r}, "
+                        f"metrics={design.get(field_name)!r}"
+                    )
         if mismatches:
             raise ExperimentError("metrics protocol mismatch:\n  " + "\n  ".join(mismatches))
 
@@ -373,6 +389,15 @@ no gradient updates occur.
 
 Analysis complete: `{report['complete']}`. See `summaries/analysis.json` for
 assumption warnings, missing pairs and convergence status.
+"""
+    interpretation = report.get("fixed_budget_interpretation")
+    if interpretation:
+        content += f"""
+
+The preregistered estimand is policy performance after the fixed training
+budget. Every completed planned seed remains in the analysis; training
+stability is a diagnostic, not an exclusion rule. Interpretation status:
+`{interpretation['status']}`.
 """
     (result_root / "README.md").write_text(content)
 
