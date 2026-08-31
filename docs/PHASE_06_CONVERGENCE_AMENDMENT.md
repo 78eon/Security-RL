@@ -125,6 +125,47 @@ pilot extension using the same excluded seeds and unchanged thresholds. It is
 defined in `experiment_01_convergence_pilot_400k.yaml` and must be frozen from
 a clean commit before execution.
 
+## 400k extension result
+
+The extension was frozen at commit `a77bddb` and executed from clean commit
+`3894d9e`. Both training and evaluation runs completed, but the declared pilot
+decision is **NO-GO**:
+
+| Field | Sparse | Shaped |
+|---|---:|---:|
+| Training episodes | 3,941 | 7,317 |
+| Overall success | 99.9% | 99.9% |
+| Final-10% success | 100% | 100% |
+| First→last 20% native-return gain | +117.83% | +142.27% |
+| Final-40% block means | −20.277, 35.424, 38.835, 16.287 | 109.572, 89.168, 131.000, 126.748 |
+| `block_means_v2` | FAIL | FAIL |
+| Frozen evaluation success | 10/10 | 10/10 |
+| Frozen evaluation mean native return | 46.2 | 116.9 |
+| Policy hash unchanged | PASS | PASS |
+
+Sparse failed block range, trend and half-window equivalence. Shaped passed the
+trend check but failed range and half-window equivalence. The raw package is
+complete and truthfully lists both runs in `not_converged`; thresholds were not
+changed after observing the result.
+
+Canonical identities and PostgreSQL reconstruction:
+
+| Arm | Checkpoint SHA-256 | Training exp/run | Evaluation run | Training/evaluation steps |
+|---|---|---|---:|---:|
+| Sparse | `d938de0979bc747bb4183eabd3aa6c3f3151bbbe821c0d0da19929552d5f2139` | 270 / 158 | 159 | 401,408 / 687 |
+| Shaped | `ec4f08aaed64a4051b33841aff15099ee1e1e379697c917436cee81ecbfb7bc8` | 271 / 160 | 161 | 401,397 / 379 |
+
+The workstation slept during sparse training, so its database wall time is not
+a compute measurement. The uninterrupted shaped arm took 487.8 seconds; a
+sequential 20-run 400k grid would project to about 163 minutes and also exceed
+the two-hour limit. The final amended grid is therefore forbidden by both the
+stability and runtime gates.
+
+No larger-budget grid will be attempted. The only methodologically permitted
+next step is a separately preregistered optimizer-stability pilot on another
+excluded development seed, applying one common training schedule to both arms.
+See `PHASE_06B_OPTIMIZER_STABILITY.md` once that protocol is committed.
+
 ## Full amended experiment
 
 If the pilot passes, run `experiment_01_amendment` at the preregistered 200k
@@ -167,3 +208,7 @@ production service and are not implied by a passing experiment.
   figures and trajectories.
 - [ ] full Podman, GUI, lint, compilation and Compose gates pass.
 - [ ] coherent commits are published to `Security-RL`.
+
+The unchecked pilot/full-grid items remain deliberate failures, not missing
+reporting. Phase 6A ends with an evidence-backed no-go and does not produce a
+new canonical reward comparison.
