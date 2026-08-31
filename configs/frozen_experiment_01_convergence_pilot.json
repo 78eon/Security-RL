@@ -1,0 +1,17 @@
+{
+  "cve_manifest_sha256": "c14575707519311e90a571e1b27d0bed16b2d10e41757f60a135ab8756137205",
+  "dependency_lock_hash": "74a17ae310a31d60",
+  "environment_config_hash": "08d7126571f4d0c3",
+  "experiment_config_sha256": "45c206fd21e3c7df28b5d3e204bf1745f484bba455e1c80951cb3af40201fa38",
+  "experiment_id": "experiment_01_convergence_pilot",
+  "frozen_at": "2026-08-31T08:00:25Z",
+  "ppo_config_hash": "220c48742b077c43",
+  "preregistered_from_commit": "e62267cb6d6f40dd1c3d48cbff5ff8dacca367e0",
+  "reward_config_hash": {
+    "shaped": "8aa4aee9074f423d",
+    "sparse": "1ffbeafeccc4662e"
+  },
+  "topology_config_hash": "2aa12404d40a23d0",
+  "topology_hash": "f875a25adf37ee34",
+  "topology_seed": 42
+}
