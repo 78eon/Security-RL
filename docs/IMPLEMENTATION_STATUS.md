@@ -75,3 +75,17 @@ not dissertation evidence for the current system.
    20 runs fail the preregistered training-stability criterion.
 2. Preregister a longer training budget or an independently justified stopping
    rule, then regenerate the grid before dissertation-level causal claims.
+
+## Amendment outcome — 2026-08-31
+
+Phase 6 tested that blocker prospectively without rewriting the historical
+audit. Constant-rate pilots at 200k and 400k demonstrated learning but failed
+the preregistered two-arm stability gate. A single preregistered
+linear-to-zero optimizer pilot at 200k then produced one stable sparse policy
+and one non-stable shaped policy. The final matched grid was therefore not run.
+
+The authoritative decision evidence is in
+`docs/PHASE_06_CONVERGENCE_AMENDMENT.md` and
+`docs/PHASE_06B_OPTIMIZER_STABILITY.md`. The research status remains:
+functional PPO and valid frozen evaluation infrastructure, but no converged
+confirmatory sparse-versus-shaped comparison under the capped protocols.
