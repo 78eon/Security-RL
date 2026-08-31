@@ -60,10 +60,36 @@ PPO_DEFAULTS: dict = {
     "device": "cpu",
 }
 SB3_DEFAULT_DEVIATIONS = {"ent_coef": (0.0, 0.01)}
+LEARNING_RATE_SCHEDULES = ("constant", "linear_to_zero")
 
 # The one Essential topology. Every run in the graded comparison trains on this
 # network; only the training seed and the reward mode vary (CP-10, CP-11).
 DEFAULT_TOPOLOGY_SEED = 42
+
+
+def linear_learning_rate(initial_rate: float):
+    """Return SB3's bounded linear-to-zero learning-rate schedule."""
+    if initial_rate <= 0:
+        raise ValueError("initial learning rate must be positive")
+
+    def schedule(progress_remaining: float) -> float:
+        bounded_progress = max(0.0, min(1.0, float(progress_remaining)))
+        return float(initial_rate) * bounded_progress
+
+    return schedule
+
+
+def ppo_manifest_config(
+    learning_rate_schedule: str = "constant", ent_coef: float = 0.01
+) -> dict:
+    """Resolve the hashable PPO protocol without serialising a callable."""
+    if learning_rate_schedule not in LEARNING_RATE_SCHEDULES:
+        raise ValueError(f"unknown learning-rate schedule: {learning_rate_schedule}")
+    config = dict(PPO_DEFAULTS)
+    config["ent_coef"] = ent_coef
+    if learning_rate_schedule != "constant":
+        config["learning_rate_schedule"] = learning_rate_schedule
+    return config
 
 
 # -- reproducibility -------------------------------------------------------
@@ -335,8 +361,10 @@ def train(args: argparse.Namespace) -> dict:
     summary = describe(env.envs[0].env)
 
     described = summary
-    ppo_config = dict(PPO_DEFAULTS)
-    ppo_config["ent_coef"] = args.ent_coef
+    ppo_config = ppo_manifest_config(args.learning_rate_schedule, args.ent_coef)
+    model_learning_rate = PPO_DEFAULTS["learning_rate"]
+    if args.learning_rate_schedule == "linear_to_zero":
+        model_learning_rate = linear_learning_rate(model_learning_rate)
 
     manifest = ExperimentManifest(
         experiment_id=run_name,
@@ -439,6 +467,7 @@ def train(args: argparse.Namespace) -> dict:
         "MlpPolicy",
         env,
         seed=args.seed,
+        learning_rate=model_learning_rate,
         ent_coef=args.ent_coef,
         verbose=1 if args.verbose else 0,
         device="cpu",
@@ -542,6 +571,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--timesteps", type=int, default=50_000)
     parser.add_argument("--ent-coef", type=float, default=0.01)
+    parser.add_argument(
+        "--learning-rate-schedule",
+        choices=LEARNING_RATE_SCHEDULES,
+        default="constant",
+        help="PPO learning-rate protocol (default: historical constant rate)",
+    )
     parser.add_argument("--postgres", action="store_true", help="log episodes to PostgreSQL")
     parser.add_argument("--log-steps", action="store_true", help="also persist per-step rows")
     parser.add_argument("--checkpoint-every", type=int, default=0)

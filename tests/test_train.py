@@ -20,7 +20,9 @@ from rlredteam.train import (  # noqa: E402
     EpisodeCollector,
     build_env,
     config_digest,
+    linear_learning_rate,
     parse_args,
+    ppo_manifest_config,
     set_all_seeds,
     summarise,
 )
@@ -34,6 +36,24 @@ def test_defaults_point_at_the_shaped_arm() -> None:
     args = parse_args([])
     assert args.seed == 42
     assert args.reward_config.name == "shaped.yaml"
+    assert args.learning_rate_schedule == "constant"
+
+
+def test_linear_learning_rate_reaches_zero_and_is_bounded() -> None:
+    schedule = linear_learning_rate(3e-4)
+    assert schedule(1.0) == pytest.approx(3e-4)
+    assert schedule(0.5) == pytest.approx(1.5e-4)
+    assert schedule(0.0) == 0.0
+    assert schedule(-1.0) == 0.0
+    assert schedule(2.0) == pytest.approx(3e-4)
+
+
+def test_ppo_manifest_marks_only_non_historical_schedule() -> None:
+    constant = ppo_manifest_config()
+    linear = ppo_manifest_config("linear_to_zero")
+    assert "learning_rate_schedule" not in constant
+    assert linear.pop("learning_rate_schedule") == "linear_to_zero"
+    assert linear == constant
 
 
 def test_topology_seed_is_not_derived_from_training_seed() -> None:

@@ -21,7 +21,7 @@ from rlredteam.manifest import digest
 from rlredteam.reporting import write_figures, write_trajectory_evidence
 from rlredteam.reward import RewardConfig
 from rlredteam.topology import TopologyConfig, describe, make_env
-from rlredteam.train import PPO_DEFAULTS
+from rlredteam.train import ppo_manifest_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = REPO_ROOT / "runs"
@@ -45,6 +45,7 @@ class ExperimentConfig:
     log_steps: bool
     frozen_inputs: Path
     metrics: Path
+    learning_rate_schedule: str = "constant"
 
     @classmethod
     def from_yaml(cls, path: Path) -> ExperimentConfig:
@@ -61,6 +62,7 @@ class ExperimentConfig:
             log_steps=bool(raw.get("log_steps", True)),
             frozen_inputs=REPO_ROOT / raw["frozen_inputs"],
             metrics=REPO_ROOT / raw["metrics"],
+            learning_rate_schedule=str(raw.get("learning_rate_schedule", "constant")),
         )
         config.validate()
         config.validate_metrics_protocol()
@@ -79,6 +81,10 @@ class ExperimentConfig:
             raise ExperimentError("training and evaluation seeds must be disjoint")
         if self.training_timesteps <= 0:
             raise ExperimentError("training_timesteps must be positive")
+        if self.learning_rate_schedule not in ("constant", "linear_to_zero"):
+            raise ExperimentError(
+                f"unknown learning-rate schedule: {self.learning_rate_schedule}"
+            )
 
     def validate_metrics_protocol(self) -> None:
         """Require config and analysis to name the same experimental units."""
@@ -105,6 +111,9 @@ class ExperimentConfig:
 
     def digest(self) -> str:
         payload = asdict(self)
+        # Preserve every already-frozen historical constant-rate digest.
+        if payload["learning_rate_schedule"] == "constant":
+            payload.pop("learning_rate_schedule")
         payload["frozen_inputs"] = str(self.frozen_inputs.relative_to(REPO_ROOT))
         payload["metrics"] = str(self.metrics.relative_to(REPO_ROOT))
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -122,7 +131,9 @@ def current_inputs(config: ExperimentConfig) -> dict:
         "topology_config_hash": topology_config.config_hash(),
         "environment_config_hash": provenance.environment_config_hash(described),
         "cve_manifest_sha256": digest(CVECatalogue.open_default()),
-        "ppo_config_hash": provenance._digest(PPO_DEFAULTS),
+        "ppo_config_hash": provenance._digest(
+            ppo_manifest_config(config.learning_rate_schedule)
+        ),
         "reward_config_hash": {
             arm: RewardConfig.from_yaml(REPO_ROOT / "configs" / f"{arm}.yaml").hash()
             for arm in config.arms
@@ -171,6 +182,8 @@ def train_run(config: ExperimentConfig, arm: str, seed: int) -> None:
         str(config.topology_seed),
         "--timesteps",
         str(config.training_timesteps),
+        "--learning-rate-schedule",
+        config.learning_rate_schedule,
         "--reward-config",
         str(REPO_ROOT / "configs" / f"{arm}.yaml"),
         "--frozen",

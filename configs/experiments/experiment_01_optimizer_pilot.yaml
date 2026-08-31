@@ -1,0 +1,13 @@
+experiment:
+  id: experiment_01_optimizer_pilot
+  description: Development-only linear-decay PPO stability pilot
+  arms: [sparse, shaped]
+  topology_seed: 42
+  training_seeds: [33]
+  evaluation_seeds: [911, 912, 913, 914, 915, 916, 917, 918, 919, 920]
+  training_timesteps: 200000
+  learning_rate_schedule: linear_to_zero
+  postgres: true
+  log_steps: true
+  frozen_inputs: configs/frozen_experiment_01_optimizer_pilot.json
+  metrics: configs/metrics_optimizer_pilot.yaml

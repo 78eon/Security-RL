@@ -41,6 +41,31 @@ def test_committed_experiment_pins_separate_train_and_evaluation_seeds() -> None
     assert loaded.training_seeds == tuple(range(42, 52))
     assert loaded.evaluation_seeds == tuple(range(1001, 1011))
     assert not set(loaded.training_seeds) & set(loaded.evaluation_seeds)
+    assert loaded.learning_rate_schedule == "constant"
+    assert loaded.digest() == "c2b99c3afa108f2cb2bf81372146eecabaaa005ddc48dbe2c4b8af917dd1917e"
+
+
+def test_optimizer_pilot_is_excluded_and_changes_only_schedule() -> None:
+    pilot = ExperimentConfig.from_yaml(
+        REPO_ROOT / "configs" / "experiments" / "experiment_01_optimizer_pilot.yaml"
+    )
+    final = ExperimentConfig.from_yaml(
+        REPO_ROOT / "configs" / "experiments" / "experiment_01_amendment.yaml"
+    )
+
+    assert pilot.training_seeds == (33,)
+    assert pilot.evaluation_seeds == tuple(range(911, 921))
+    assert pilot.learning_rate_schedule == "linear_to_zero"
+    assert final.learning_rate_schedule == "constant"
+    assert not set(pilot.training_seeds) & set(final.training_seeds)
+    assert not set(pilot.evaluation_seeds) & set(final.evaluation_seeds)
+    assert pilot.training_timesteps == final.training_timesteps == 200_000
+    assert pilot.topology_seed == final.topology_seed == 42
+
+
+def test_unknown_optimizer_schedule_fails_closed(tmp_path) -> None:
+    with pytest.raises(ExperimentError, match="unknown learning-rate schedule"):
+        config(tmp_path, learning_rate_schedule="adaptive_after_results").validate()
 
 
 def test_convergence_pilot_is_excluded_from_amended_final_seeds() -> None:
