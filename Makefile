@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test onprem-train onprem-eval infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -127,6 +127,10 @@ onprem-train: ## Train mask-aware PPO across on-prem topology seeds 1-60
 
 onprem-eval: ## Evaluate frozen on-prem PPO on held-out seeds 2001-2020
 	$(COMPOSE) run --rm app python scripts/evaluate_onprem.py --split test --postgres
+
+onprem-verify: ## Verify gated on-prem artifacts and reconstruct evaluations from PostgreSQL
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/verify_onprem_completion.py --postgres
 
 infrastructure-train: ## Train one mask-aware PPO across legacy/cloud/hybrid profiles
 	$(COMPOSE) run --rm app python scripts/train_infrastructure.py

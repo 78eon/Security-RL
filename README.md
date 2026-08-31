@@ -29,6 +29,7 @@ make enterprise-demo          # typed discovery-to-crown-jewel demonstration
 make onprem-demo              # hidden on-prem topology feasibility trajectory
 make onprem-train             # mask-aware PPO over training topology seeds 1-60
 make onprem-eval              # frozen evaluation on held-out seeds + PostgreSQL
+make onprem-verify            # verify checkpoint, evidence and PostgreSQL reconstruction
 make infrastructure-train     # train across legacy/cloud/hybrid profiles
 make infrastructure-eval      # frozen held-out evaluation for every profile
 make lab-build                # build isolated-range evidence collector
@@ -54,7 +55,8 @@ topology seed, runs the actual offline Python backend on a Qt worker, and displa
 generated entities and trace-derived path. It does not enumerate nearby or real networks.
 
 The random-topology and cross-profile protocols are documented in
-[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md) and
+[Phase 3](docs/PHASE_03_UNSEEN_GENERALISATION.md), its
+[completion audit](docs/PHASE_03_COMPLETION_AUDIT.md), and
 [Phase 4](docs/PHASE_04_INFRASTRUCTURE_PROFILES.md).
 
 ## Reproducing the environment
