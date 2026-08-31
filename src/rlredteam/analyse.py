@@ -73,6 +73,11 @@ def assess_convergence(episodes: list[dict], protocol: dict) -> tuple[bool, dict
     either, so a large gain over the preceding window also fails.
     """
     rules = protocol["convergence"]
+    method = rules.get("method", "raw_episode_v1")
+    if method == "block_means_v2":
+        return _assess_block_mean_stability(episodes, rules)
+    if method != "raw_episode_v1":
+        raise ValueError(f"unsupported convergence method: {method}")
     detail: dict = {"criterion": rules}
 
     if len(episodes) < rules["min_episodes"]:
@@ -121,6 +126,82 @@ def assess_convergence(episodes: list[dict], protocol: dict) -> tuple[bool, dict
     detail["checks"] = checks
     if not all(checks.values()):
         detail["reason"] = ", ".join(k for k, ok in checks.items() if not ok)
+    return all(checks.values()), detail
+
+
+def _assess_block_mean_stability(
+    episodes: list[dict], rules: dict
+) -> tuple[bool, dict]:
+    """Assess stability of aggregate return blocks, not raw episode variance.
+
+    Episodic cyber simulations remain stochastic after a policy has stopped
+    materially changing. Requiring the coefficient of variation of individual
+    episode returns to become small therefore confuses environmental variance
+    with learning stability. Version 2 preregisters consecutive block means as
+    the unit of analysis and still reports raw spread as a diagnostic.
+    """
+    detail: dict = {"criterion": rules}
+    minimum = int(rules["min_episodes"])
+    block_count = int(rules["blocks"])
+    if block_count < 2:
+        raise ValueError("block_means_v2 requires at least two blocks")
+    if len(episodes) < minimum:
+        detail["reason"] = f"only {len(episodes)} episodes; need {minimum}"
+        return False, detail
+
+    tail_size = max(minimum, int(len(episodes) * float(rules["window"])))
+    tail = episodes[-tail_size:]
+    usable = len(tail) - (len(tail) % block_count)
+    tail = tail[-usable:]
+    block_size = usable // block_count
+    values = [float(episode["native_return"]) for episode in tail]
+    block_means = [
+        statistics.fmean(values[index : index + block_size])
+        for index in range(0, usable, block_size)
+    ]
+    mean = statistics.fmean(values)
+    scale = max(abs(mean), float(rules["return_scale_floor"]))
+    relative_range = (max(block_means) - min(block_means)) / scale
+
+    xs = list(range(block_count))
+    x_mean = statistics.fmean(xs)
+    block_mean = statistics.fmean(block_means)
+    denominator = sum((x - x_mean) ** 2 for x in xs) or 1.0
+    slope = sum(
+        (x - x_mean) * (value - block_mean)
+        for x, value in zip(xs, block_means, strict=True)
+    ) / denominator
+    normalised_slope = slope / scale
+    midpoint = block_count // 2
+    previous_mean = statistics.fmean(block_means[:midpoint])
+    final_mean = statistics.fmean(block_means[midpoint:])
+    half_change = abs(final_mean - previous_mean) / max(
+        abs(previous_mean), float(rules["return_scale_floor"])
+    )
+    raw_relative_std = statistics.pstdev(values) / scale
+
+    detail.update(
+        {
+            "window_episodes": len(values),
+            "block_size": block_size,
+            "block_means": [round(value, 3) for value in block_means],
+            "window_mean": round(mean, 3),
+            "raw_relative_std_diagnostic": round(raw_relative_std, 4),
+            "block_mean_relative_range": round(relative_range, 4),
+            "normalised_block_slope": round(normalised_slope, 6),
+            "half_window_change": round(half_change, 4),
+        }
+    )
+    checks = {
+        "block_range_within_threshold": relative_range
+        <= float(rules["max_block_mean_relative_range"]),
+        "block_trend_within_threshold": abs(normalised_slope)
+        <= float(rules["max_abs_normalised_block_slope"]),
+        "halves_equivalent": half_change <= float(rules["max_half_window_change"]),
+    }
+    detail["checks"] = checks
+    if not all(checks.values()):
+        detail["reason"] = ", ".join(key for key, passed in checks.items() if not passed)
     return all(checks.values()), detail
 
 

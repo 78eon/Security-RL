@@ -1,0 +1,12 @@
+experiment:
+  id: experiment_01_convergence_pilot
+  description: Pre-registered 200k-step feasibility pilot on an excluded development seed
+  arms: [sparse, shaped]
+  topology_seed: 42
+  training_seeds: [32]
+  evaluation_seeds: [901, 902, 903, 904, 905, 906, 907, 908, 909, 910]
+  training_timesteps: 200000
+  postgres: true
+  log_steps: true
+  frozen_inputs: configs/frozen_experiment_01_convergence_pilot.json
+  metrics: configs/metrics_convergence_amendment.yaml

@@ -314,6 +314,71 @@ def test_convergence_reports_its_criterion(protocol: dict) -> None:
     assert "criterion" in detail and "checks" in detail
 
 
+def test_block_mean_stability_tolerates_irreducible_episode_noise(protocol: dict) -> None:
+    amended = dict(protocol)
+    amended["convergence"] = {
+        "method": "block_means_v2",
+        "window": 1.0,
+        "min_episodes": 100,
+        "blocks": 4,
+        "return_scale_floor": 100.0,
+        "max_block_mean_relative_range": 0.35,
+        "max_abs_normalised_block_slope": 0.10,
+        "max_half_window_change": 0.15,
+    }
+    # Individual episodes have very high variance, but every consecutive block
+    # has the same mean. That is a stable learning curve, not policy drift.
+    values = [-300.0, 100.0] * 52
+
+    converged, detail = assess_convergence(episodes_from(values), amended)
+
+    assert converged
+    assert detail["raw_relative_std_diagnostic"] > 1.0
+    assert detail["block_means"] == [-100.0] * 4
+
+
+def test_block_mean_stability_rejects_continuing_improvement(protocol: dict) -> None:
+    amended = dict(protocol)
+    amended["convergence"] = {
+        "method": "block_means_v2",
+        "window": 1.0,
+        "min_episodes": 100,
+        "blocks": 4,
+        "return_scale_floor": 100.0,
+        "max_block_mean_relative_range": 0.35,
+        "max_abs_normalised_block_slope": 0.10,
+        "max_half_window_change": 0.15,
+    }
+
+    converged, detail = assess_convergence(
+        episodes_from([-500.0 + 4.0 * index for index in range(100)]), amended
+    )
+
+    assert not converged
+    assert not detail["checks"]["block_trend_within_threshold"]
+
+
+def test_unknown_convergence_method_fails_closed(protocol: dict) -> None:
+    invalid = dict(protocol)
+    invalid["convergence"] = {"method": "invented"}
+
+    with pytest.raises(ValueError, match="unsupported convergence method"):
+        assess_convergence(episodes_from([-100.0] * 100), invalid)
+
+
+def test_convergence_amendment_changes_only_the_stability_rule(protocol: dict) -> None:
+    amended = load_protocol(REPO_ROOT / "configs" / "metrics_convergence_amendment.yaml")
+    original_without_convergence = {
+        key: value for key, value in protocol.items() if key != "convergence"
+    }
+    amended_without_convergence = {
+        key: value for key, value in amended.items() if key != "convergence"
+    }
+
+    assert amended_without_convergence == original_without_convergence
+    assert amended["convergence"]["method"] == "block_means_v2"
+
+
 # -- CP-27/28 metrics and statistics ----------------------------------------
 
 

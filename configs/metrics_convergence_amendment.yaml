@@ -1,0 +1,53 @@
+# Phase 6 preregistered amendment. The outcome/statistical protocol is copied
+# unchanged from metrics.yaml. Only the explicitly versioned training-stability
+# diagnostic changes; experiment_01 retains its historical v1 interpretation.
+primary_metric: native_return
+
+primary_metrics:
+  - native_return
+  - native_return_std
+  - success_rate
+  - steps_to_goal
+  - mean_cvss_exploited
+
+descriptive_metrics:
+  - native_return_median
+  - median_steps_to_goal
+  - hvt_hit_rate
+  - max_cvss_exploited
+  - hosts_compromised
+  - discovered_hosts
+  - tactic_coverage
+  - total_shaped_return
+
+statistics:
+  test: paired_t
+  alpha: 0.05
+  correction: bonferroni
+  family_size: 5
+  effect_size: cohens_d
+  bootstrap_samples: 10000
+  confidence: 0.95
+
+evaluation:
+  action_selection: stochastic
+  reward_scale: native
+  seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  episode_seeds: [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]
+
+convergence:
+  method: block_means_v2
+  # Use the final 40% and at least 100 episodes. Four consecutive aggregate
+  # blocks separate policy drift from irreducible per-episode outcome noise.
+  window: 0.40
+  min_episodes: 100
+  blocks: 4
+  # One native crown-jewel reward is 100. This prevents ratios exploding as a
+  # competent policy's negative step costs approach zero.
+  return_scale_floor: 100.0
+  max_block_mean_relative_range: 0.35
+  max_abs_normalised_block_slope: 0.10
+  max_half_window_change: 0.15
+
+high_value_target:
+  cvss_threshold: 9.0
