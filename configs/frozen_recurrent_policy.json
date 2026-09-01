@@ -1,0 +1,19 @@
+{
+  "dependency_lock_hash": "74a17ae310a31d60",
+  "distribution_sha256": "e3e34e2cec6297cba69974359e88105730cbc9085f07be455d91f982306223c5",
+  "experiment_config_sha256": "8fcb8078b27f6331b49339f0b437792d8884e8d0230c4301cfd996aabbff11c5",
+  "experiment_id": "advanced-rl-recurrent-v1",
+  "frozen_at": "2026-09-01T13:23:45.413043+00:00",
+  "profile_config_sha256": "5f23e4bc8b01bebdce027e5f7067ce62585b75c0050174bfaa9f7d9128f4b675",
+  "protocol_commit": "cf42c7a53dc544662bd8da38528744a3b11608a3",
+  "schema_version": 1,
+  "source_sha256": {
+    "scripts/run_recurrent_study.py": "4a559d974daac4536009d01cc4457965ea0be75bb63a21f8515db382e4aed2dd",
+    "src/rlredteam/enterprise/environment.py": "017ab7921fca8966a34ce3f7670dc38bca3cca58eb83d43ac155ac505f5273aa",
+    "src/rlredteam/enterprise/infrastructure_generalisation.py": "d28d952ce2b12401837ba554616282d68a48b54fe6f4310ae57402c8a3fb1681",
+    "src/rlredteam/enterprise/recurrent.py": "1127472a350beab92b987074c74393f88294ca4b6ac90b5018f0c39f7207280c",
+    "src/rlredteam/enterprise/recurrent_study.py": "22a1053d76038d7ae5f4185fe1a3d2d21fa5ccdd949b6b13e2a26c61697102b9",
+    "src/rlredteam/enterprise/state.py": "72d933a096ccb0c3417cd8acba1b51c1f54da6afba960615b231d195f4f3cc47"
+  },
+  "synthetic_vulnerability_manifest_sha256": "28d43d0d13cc01bb379ce63ed7500daa0d05cc4cde1066d71d614d6ff2079f11"
+}
