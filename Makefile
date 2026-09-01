@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -137,6 +137,25 @@ infrastructure-train: ## Train one mask-aware PPO across legacy/cloud/hybrid pro
 
 infrastructure-eval: ## Evaluate frozen PPO on all held-out infrastructure profiles
 	$(COMPOSE) run --rm app python scripts/evaluate_infrastructure.py --split test --postgres
+
+recurrent-freeze: ## Freeze Phase 8 recurrent-study source/config hashes
+	podman run --rm --user "$$UID:$$GID" -w /app \
+		-e RLREDTEAM_GIT_DIRTY="$$RLREDTEAM_GIT_DIRTY" \
+		-v "$$PWD/configs:/app/configs:rw,z" \
+		-v "$$PWD/src:/app/src:ro,z" \
+		-v "$$PWD/scripts:/app/scripts:ro,z" \
+		-v "$$PWD/.git:/app/.git:ro,z" \
+		-v "$$PWD/pyproject.toml:/app/pyproject.toml:ro,z" \
+		localhost/sourcecode_app:latest python scripts/run_recurrent_study.py freeze
+
+recurrent-dry-run: ## Validate Phase 8 frozen inputs and list the 20-run grid
+	$(COMPOSE) run --rm app python scripts/run_recurrent_study.py dry-run
+
+recurrent-dev: ## Run excluded-seed Phase 8 feasibility and validation study
+	$(COMPOSE) run --rm app python scripts/run_recurrent_study.py development
+
+recurrent-run: ## Run canonical matched Phase 8 training/test evaluation in PostgreSQL
+	$(COMPOSE) run --rm app python scripts/run_recurrent_study.py run --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3

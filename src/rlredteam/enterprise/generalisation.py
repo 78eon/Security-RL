@@ -384,7 +384,7 @@ def persist_evaluation(
         ),
         seed_set=[int(training_manifest["training_seed"])],
         condition="unseen_topology_generalisation",
-        algorithm="MaskablePPO",
+        algorithm=str(training_manifest.get("algorithm", "MaskablePPO")),
         hyperparameters=dict(training_manifest["ppo"]),
         designation="evaluation",
         evaluation_seeds=sorted({int(row["evaluation_seed"]) for row in episodes}),

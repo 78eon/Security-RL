@@ -8,6 +8,7 @@ import torch
 
 from rlredteam.enterprise.profiles import DeploymentProfile, InfrastructureCurriculumEnv
 from rlredteam.enterprise.recurrent import (
+    KnowledgeActionGuard,
     KnowledgeFeatureExtractor,
     KnowledgeMaskedRecurrentPolicy,
     KnowledgeMaskObservationWrapper,
@@ -22,7 +23,9 @@ PROFILES = (
 
 
 def wrapped_env(seed: int = 1) -> KnowledgeMaskObservationWrapper:
-    return KnowledgeMaskObservationWrapper(InfrastructureCurriculumEnv((seed,), PROFILES))
+    return KnowledgeMaskObservationWrapper(
+        KnowledgeActionGuard(InfrastructureCurriculumEnv((seed,), PROFILES))
+    )
 
 
 def make_model(env: KnowledgeMaskObservationWrapper):
@@ -104,6 +107,19 @@ def test_wrapper_mask_cannot_read_ground_truth() -> None:
     assert np.array_equal(env.action_masks(), expected)
     assert np.array_equal(env.split_observation(observation)[1].astype(bool), expected)
     env.close()
+
+
+def test_action_guard_rejects_a_masked_action_before_environment_step() -> None:
+    guard = KnowledgeActionGuard(InfrastructureCurriculumEnv((1,), PROFILES))
+    guard.reset(
+        seed=12,
+        options={"profile": DeploymentProfile.LEGACY.value, "topology_seed": 1},
+    )
+    invalid = int(np.flatnonzero(~guard.action_masks())[0])
+    with pytest.raises(RuntimeError, match="outside AgentKnowledge mask"):
+        guard.step(invalid)
+    assert guard.invalid_action_selections == 1
+    guard.close()
 
 
 def test_recurrent_policy_never_selects_a_masked_action() -> None:

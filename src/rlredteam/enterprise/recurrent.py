@@ -164,6 +164,34 @@ class RecurrentResearchConfig:
         return _canonical_digest(asdict(self))
 
 
+class KnowledgeActionGuard(gym.Wrapper):
+    """Fail closed if a study policy ever selects a knowledge-invalid action."""
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        if not isinstance(env.action_space, spaces.Discrete):
+            raise TypeError("knowledge action guard requires a Discrete action space")
+        self.action_count = int(env.action_space.n)
+        self.invalid_action_selections = 0
+
+    def action_masks(self) -> np.ndarray:
+        mask = np.asarray(self.env.action_masks(), dtype=bool)
+        if mask.shape != (self.action_count,):
+            raise RuntimeError("AgentKnowledge action mask shape changed")
+        return mask
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        self.invalid_action_selections = 0
+        return self.env.reset(seed=seed, options=options)
+
+    def step(self, action: int):
+        selected = int(np.asarray(action).item())
+        if not 0 <= selected < self.action_count or not self.action_masks()[selected]:
+            self.invalid_action_selections += 1
+            raise RuntimeError("policy selected an action outside AgentKnowledge mask")
+        return self.env.step(selected)
+
+
 class KnowledgeMaskObservationWrapper(gym.Wrapper):
     """Carry the knowledge mask with an observation for recurrent rollouts.
 
