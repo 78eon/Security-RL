@@ -1,0 +1,20 @@
+{
+  "base_distribution_sha256": "e3e34e2cec6297cba69974359e88105730cbc9085f07be455d91f982306223c5",
+  "base_profile_config_sha256": "5f23e4bc8b01bebdce027e5f7067ce62585b75c0050174bfaa9f7d9128f4b675",
+  "base_vulnerability_snapshot_sha256": "28d43d0d13cc01bb379ce63ed7500daa0d05cc4cde1066d71d614d6ff2079f11",
+  "dependency_lock_hash": "74a17ae310a31d60",
+  "experiment_config_sha256": "b0e8b3092e9bdc77d56cd23fd079d3ba7dc2ac0b867fdb16afbe905f3ace178a",
+  "experiment_id": "advanced-rl-curriculum-v1",
+  "frozen_at": "2026-09-01T20:23:42.433724+00:00",
+  "protocol_commit": "732efffcfea0b08584d113e63198f8f274d289f8",
+  "schedule_distribution_sha256": "12b89db0192cabc9302840e118b40705822424870a6b2f6e8e49590041842fb6",
+  "schema_version": 1,
+  "source_sha256": {
+    "scripts/run_curriculum_study.py": "1d4d91e87475e9d2ffb4a97bbb6a3b9bd2c765499f77058b74fea36831a44564",
+    "src/rlredteam/enterprise/curriculum.py": "11ece02431f963c1f79bcf847b728bff1051a374668c0676e2b09edec6f42b5e",
+    "src/rlredteam/enterprise/curriculum_study.py": "3428cc7c03a7360271d855147c260afa60fe8cbaf6aa0c042cae4b0877581420",
+    "src/rlredteam/enterprise/environment.py": "017ab7921fca8966a34ce3f7670dc38bca3cca58eb83d43ac155ac505f5273aa",
+    "src/rlredteam/enterprise/profiles.py": "26f676cd4e74ddb46fe47b532b2de543cd33770d953a0fa6404881111c83a4fa",
+    "src/rlredteam/enterprise/state.py": "72d933a096ccb0c3417cd8acba1b51c1f54da6afba960615b231d195f4f3cc47"
+  }
+}
