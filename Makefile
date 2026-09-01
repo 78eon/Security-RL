@@ -157,6 +157,9 @@ recurrent-dev: ## Run excluded-seed Phase 8 feasibility and validation study
 recurrent-run: ## Run canonical matched Phase 8 training/test evaluation in PostgreSQL
 	$(COMPOSE) run --rm app python scripts/run_recurrent_study.py run --postgres
 
+recurrent-verify: ## Verify Phase 8 files, checkpoints and PostgreSQL reconstruction
+	$(COMPOSE) run --rm app python scripts/verify_recurrent_completion.py --postgres
+
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3
 
