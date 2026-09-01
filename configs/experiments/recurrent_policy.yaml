@@ -14,6 +14,7 @@ experiment:
   evaluation_episode_seeds: [9101]
   deterministic_evaluation: true
   runtime_cap_minutes: 120
+  parallel_training_workers: 6
   common_ppo:
     learning_rate: 0.0003
     n_steps: 256

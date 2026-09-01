@@ -57,6 +57,7 @@ def test_phase8_configuration_pins_matched_design() -> None:
     assert config.training_seeds == tuple(range(101, 111))
     assert config.development_seed not in config.training_seeds
     assert config.total_timesteps == 50176
+    assert config.parallel_training_workers == 6
     assert config.total_timesteps % config.common_ppo["n_steps"] == 0
     assert config.primary_metrics == (
         "success_rate",

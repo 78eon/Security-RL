@@ -228,6 +228,9 @@ def train_arm(
             raise RecurrentStudyError("canonical training requires frozen inputs")
         validate_frozen_inputs(frozen_inputs, config)
 
+    import torch
+
+    torch.set_num_threads(1)
     set_all_seeds(seed)
     env = _make_training_env(config, arm)
     model = _make_model(config, arm, seed, env)
@@ -298,6 +301,7 @@ def train_arm(
         "parameter_count": sum(
             parameter.numel() for parameter in model.policy.parameters()
         ),
+        "torch_num_threads": torch.get_num_threads(),
         "distribution": infrastructure_distribution_manifest(
             split, profile_config, config.train_profiles
         ),

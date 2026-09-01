@@ -20,6 +20,10 @@ from rlredteam.enterprise.recurrent_study import (
     validate_frozen_inputs,
     write_study_summary,
 )
+from scripts.run_recurrent_study import (
+    project_parallel_training_minutes,
+    validate_development_gate,
+)
 
 
 class HighestValidPolicy:
@@ -66,6 +70,53 @@ def test_input_manifest_hashes_every_research_boundary() -> None:
         "src/rlredteam/enterprise/state.py",
         "scripts/run_recurrent_study.py",
     }
+
+
+def test_six_worker_projection_uses_excluded_timing_and_fits_cap(tmp_path) -> None:
+    config = RecurrentResearchConfig.from_yaml()
+    elapsed = {
+        "maskable_ppo": 1232.54067283,
+        "knowledge_masked_recurrent_ppo": 1544.529278333,
+    }
+    projected = project_parallel_training_minutes(
+        elapsed,
+        seeds=len(config.training_seeds),
+        arms=config.arms,
+        workers=config.parallel_training_workers,
+    )
+    assert projected == pytest.approx(92.57, abs=0.1)
+    assert projected < config.runtime_cap_minutes
+
+    metadata = {
+        "phase": "development",
+        "complete": True,
+        # The development run predates the scheduling-only config field.
+        "study_config_hash": config.scientific_digest(),
+        "training_timesteps": config.total_timesteps,
+        "topology_seeds": list(config.topology_splits["validation"]),
+        "training_elapsed_seconds_by_arm": elapsed,
+        "training_manifests": [
+            {"arm": arm, "training_seed": config.development_seed, "development": True}
+            for arm in config.arms
+        ],
+    }
+    path = tmp_path / "study.json"
+    path.write_text(json.dumps(metadata))
+    validated = validate_development_gate(path, config)
+    assert validated["parallel_projected_canonical_minutes"] == pytest.approx(
+        projected
+    )
+
+
+@pytest.mark.parametrize("bad_timing", [0.0, -1.0, float("nan"), float("inf")])
+def test_parallel_projection_rejects_invalid_timing(bad_timing) -> None:
+    with pytest.raises(RecurrentStudyError, match="finite and positive"):
+        project_parallel_training_minutes(
+            {"maskable_ppo": bad_timing},
+            seeds=1,
+            arms=("maskable_ppo",),
+            workers=1,
+        )
 
 
 def test_frozen_inputs_fail_closed_on_drift() -> None:

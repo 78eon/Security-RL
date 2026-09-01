@@ -55,6 +55,7 @@ class RecurrentResearchConfig:
     evaluation_episode_seeds: tuple[int, ...]
     deterministic_evaluation: bool
     runtime_cap_minutes: int
+    parallel_training_workers: int
     common_ppo: dict[str, Any]
     baseline_policy: dict[str, Any]
     recurrent_policy: dict[str, Any]
@@ -83,6 +84,7 @@ class RecurrentResearchConfig:
             evaluation_episode_seeds=tuple(map(int, raw["evaluation_episode_seeds"])),
             deterministic_evaluation=bool(raw["deterministic_evaluation"]),
             runtime_cap_minutes=int(raw["runtime_cap_minutes"]),
+            parallel_training_workers=int(raw["parallel_training_workers"]),
             common_ppo=dict(raw["common_ppo"]),
             baseline_policy=dict(raw["baseline_policy"]),
             recurrent_policy=dict(raw["recurrent_policy"]),
@@ -109,6 +111,8 @@ class RecurrentResearchConfig:
             raise ValueError("development seed must be excluded from canonical training")
         if self.total_timesteps <= 0 or self.runtime_cap_minutes <= 0:
             raise ValueError("training budget and runtime cap must be positive")
+        if not 1 <= self.parallel_training_workers <= 6:
+            raise ValueError("parallel training workers must be between 1 and 6")
         required_ppo = {
             "learning_rate",
             "n_steps",
@@ -162,6 +166,12 @@ class RecurrentResearchConfig:
 
     def digest(self) -> str:
         return _canonical_digest(asdict(self))
+
+    def scientific_digest(self) -> str:
+        """Hash research controls separately from execution scheduling."""
+        payload = asdict(self)
+        payload.pop("parallel_training_workers")
+        return _canonical_digest(payload)
 
 
 class KnowledgeActionGuard(gym.Wrapper):

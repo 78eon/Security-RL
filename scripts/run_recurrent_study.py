@@ -4,7 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
+import math
+import multiprocessing
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from rlredteam.enterprise.recurrent import RecurrentResearchConfig
@@ -48,6 +53,41 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def project_parallel_training_minutes(
+    elapsed_by_arm: dict[str, float],
+    *,
+    seeds: int,
+    arms: tuple[str, ...],
+    workers: int,
+) -> float:
+    """Conservative list-scheduling projection from excluded-seed timings."""
+    if workers <= 0 or seeds <= 0 or set(elapsed_by_arm) != set(arms):
+        raise RecurrentStudyError("parallel runtime projection inputs are incomplete")
+    durations = {arm: float(elapsed_by_arm[arm]) for arm in arms}
+    if any(not math.isfinite(value) or value <= 0 for value in durations.values()):
+        raise RecurrentStudyError("parallel runtime timings must be finite and positive")
+    slots = [0.0] * workers
+    heapq.heapify(slots)
+    for _ in range(seeds):
+        for arm in arms:
+            available = heapq.heappop(slots)
+            heapq.heappush(slots, available + durations[arm])
+    return max(slots) / 60.0
+
+
+def _train_job(payload: tuple) -> dict:
+    run_dir, arm, seed, config, frozen, timesteps = payload
+    return train_arm(
+        run_dir,
+        arm=arm,
+        training_seed=seed,
+        config=config,
+        frozen_inputs=frozen,
+        timesteps=timesteps,
+        development=False,
+    )
+
+
 def validate_development_gate(
     path: Path, config: RecurrentResearchConfig
 ) -> dict:
@@ -59,7 +99,10 @@ def validate_development_gate(
     checks = {
         "phase": (metadata.get("phase"), "development"),
         "complete": (metadata.get("complete"), True),
-        "study config": (metadata.get("study_config_hash"), config.digest()),
+        "scientific config": (
+            metadata.get("scientific_config_hash", metadata.get("study_config_hash")),
+            config.scientific_digest(),
+        ),
         "training budget": (
             metadata.get("training_timesteps"),
             config.total_timesteps,
@@ -74,7 +117,17 @@ def validate_development_gate(
         for name, (actual, expected) in checks.items()
         if actual != expected
     ]
-    projected = float(metadata.get("projected_canonical_minutes", float("inf")))
+    elapsed_by_arm = metadata.get("training_elapsed_seconds_by_arm", {})
+    try:
+        projected = project_parallel_training_minutes(
+            {arm: float(elapsed_by_arm[arm]) for arm in config.arms},
+            seeds=len(config.training_seeds),
+            arms=config.arms,
+            workers=config.parallel_training_workers,
+        )
+    except (KeyError, TypeError, ValueError, RecurrentStudyError) as exc:
+        failures.append(f"development timing is incomplete: {exc}")
+        projected = float("inf")
     if projected > config.runtime_cap_minutes:
         failures.append(
             f"projected runtime {projected:.1f} exceeds cap {config.runtime_cap_minutes}"
@@ -91,6 +144,7 @@ def validate_development_gate(
         raise RecurrentStudyError(
             "Phase 8 development gate failed:\n  " + "\n  ".join(failures)
         )
+    metadata["parallel_projected_canonical_minutes"] = projected
     return metadata
 
 
@@ -100,8 +154,9 @@ def run_study(args: argparse.Namespace, config: RecurrentResearchConfig) -> dict
         raise RecurrentStudyError("--timesteps is allowed only for excluded development")
     if args.limit_topologies and not development:
         raise RecurrentStudyError("canonical test topology set cannot be limited")
+    development_gate = None
     if not development:
-        validate_development_gate(
+        development_gate = validate_development_gate(
             args.results / "development" / "metadata" / "study.json",
             config,
         )
@@ -117,57 +172,94 @@ def run_study(args: argparse.Namespace, config: RecurrentResearchConfig) -> dict
     timesteps = args.timesteps if args.timesteps is not None else config.total_timesteps
     result_root = args.results / ("development" if development else "test")
     all_episodes = []
-    training_manifests = []
     evaluation_metadata = []
-    for arm in config.arms:
-        for seed in seeds:
-            run_name = arm_run_name(config, arm, seed)
-            run_dir = args.runs / ("development" if development else "canonical") / run_name
-            manifest = train_arm(
+    jobs = [
+        (
+            args.runs
+            / ("development" if development else "canonical")
+            / arm_run_name(config, arm, seed),
+            arm,
+            seed,
+        )
+        for seed in seeds
+        for arm in config.arms
+    ]
+    training_started = time.monotonic()
+    if development:
+        training_manifests = [
+            train_arm(
                 run_dir,
                 arm=arm,
                 training_seed=seed,
                 config=config,
                 frozen_inputs=frozen,
                 timesteps=timesteps,
-                development=development,
+                development=True,
                 allow_dirty=args.allow_dirty,
             )
-            checkpoint = run_dir / "model.zip"
-            validate_training_manifest(
-                manifest,
-                checkpoint,
-                arm=arm,
-                training_seed=seed,
-                config=config,
-                frozen_inputs=frozen,
-                development=development,
-                allow_unverifiable=development and args.allow_dirty,
-            )
-            model = load_arm_model(arm, checkpoint)
-            episodes, steps, integrity = evaluate_arm(
-                model,
-                arm=arm,
-                training_seed=seed,
-                profiles=config.train_profiles,
-                topology_seeds=topology_seeds,
-                evaluation_episode_seeds=config.evaluation_episode_seeds,
-                deterministic=config.deterministic_evaluation,
-            )
-            validate_finite_evidence(episodes, steps)
-            metadata = persist_and_write_run_evaluation(
-                result_root / "raw" / run_name,
-                episodes=episodes,
-                steps=steps,
-                integrity=integrity,
-                training_manifest=manifest,
-                checkpoint=checkpoint,
-                split_name=split_name,
-                postgres=args.postgres,
-            )
-            all_episodes.extend(episodes)
-            training_manifests.append(manifest)
-            evaluation_metadata.append(metadata)
+            for run_dir, arm, seed in jobs
+        ]
+    else:
+        context = multiprocessing.get_context("spawn")
+        completed: dict[tuple[str, int], dict] = {}
+        with ProcessPoolExecutor(
+            max_workers=config.parallel_training_workers,
+            mp_context=context,
+        ) as executor:
+            futures = {
+                executor.submit(
+                    _train_job,
+                    (run_dir, arm, seed, config, frozen, timesteps),
+                ): (arm, seed)
+                for run_dir, arm, seed in jobs
+            }
+            for future in as_completed(futures):
+                arm, seed = futures[future]
+                completed[(arm, seed)] = future.result()
+        training_manifests = [completed[(arm, seed)] for _, arm, seed in jobs]
+    training_wall_seconds = time.monotonic() - training_started
+    manifests_by_run = {
+        (item["arm"], int(item["training_seed"])): item
+        for item in training_manifests
+    }
+
+    for run_dir, arm, seed in jobs:
+        run_name = arm_run_name(config, arm, seed)
+        manifest = manifests_by_run[(arm, seed)]
+        checkpoint = run_dir / "model.zip"
+        validate_training_manifest(
+            manifest,
+            checkpoint,
+            arm=arm,
+            training_seed=seed,
+            config=config,
+            frozen_inputs=frozen,
+            development=development,
+            allow_unverifiable=development and args.allow_dirty,
+        )
+        model = load_arm_model(arm, checkpoint)
+        episodes, steps, integrity = evaluate_arm(
+            model,
+            arm=arm,
+            training_seed=seed,
+            profiles=config.train_profiles,
+            topology_seeds=topology_seeds,
+            evaluation_episode_seeds=config.evaluation_episode_seeds,
+            deterministic=config.deterministic_evaluation,
+        )
+        validate_finite_evidence(episodes, steps)
+        metadata = persist_and_write_run_evaluation(
+            result_root / "raw" / run_name,
+            episodes=episodes,
+            steps=steps,
+            integrity=integrity,
+            training_manifest=manifest,
+            checkpoint=checkpoint,
+            split_name=split_name,
+            postgres=args.postgres,
+        )
+        all_episodes.extend(episodes)
+        evaluation_metadata.append(metadata)
 
     seed_metrics = aggregate_seed_metrics(
         all_episodes,
@@ -189,10 +281,11 @@ def run_study(args: argparse.Namespace, config: RecurrentResearchConfig) -> dict
         )
         for arm in config.arms
     }
-    projected_minutes = (
-        sum(elapsed_by_arm.values())
-        * (len(config.training_seeds) / len(seeds))
-        / 60.0
+    projected_minutes = project_parallel_training_minutes(
+        {arm: elapsed_by_arm[arm] / len(seeds) for arm in config.arms},
+        seeds=len(config.training_seeds),
+        arms=config.arms,
+        workers=config.parallel_training_workers,
     )
     metadata = {
         "schema_version": 1,
@@ -201,6 +294,7 @@ def run_study(args: argparse.Namespace, config: RecurrentResearchConfig) -> dict
         "complete": report["complete"],
         "code_commit": git_commit(),
         "study_config_hash": config.digest(),
+        "scientific_config_hash": config.scientific_digest(),
         "frozen_inputs": frozen,
         "topology_split": split_name,
         "topology_seeds": list(topology_seeds),
@@ -209,7 +303,12 @@ def run_study(args: argparse.Namespace, config: RecurrentResearchConfig) -> dict
         "training_manifests": training_manifests,
         "evaluation_metadata": evaluation_metadata,
         "training_elapsed_seconds_by_arm": elapsed_by_arm,
+        "training_wall_seconds": training_wall_seconds,
+        "parallel_training_workers": (
+            1 if development else config.parallel_training_workers
+        ),
         "projected_canonical_minutes": projected_minutes,
+        "development_gate": development_gate,
         "runtime_cap_minutes": config.runtime_cap_minutes,
     }
     write_study_summary(
