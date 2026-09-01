@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -159,6 +159,25 @@ recurrent-run: ## Run canonical matched Phase 8 training/test evaluation in Post
 
 recurrent-verify: ## Verify Phase 8 files, checkpoints and PostgreSQL reconstruction
 	$(COMPOSE) run --rm app python scripts/verify_recurrent_completion.py --postgres
+
+curriculum-freeze: ## Freeze Phase 9 curriculum-study source/config hashes
+	podman run --rm --user 0:0 -w /app -e MPLCONFIGDIR=/tmp/matplotlib \
+		-e RLREDTEAM_GIT_DIRTY="$$RLREDTEAM_GIT_DIRTY" \
+		-v "$$PWD/configs:/app/configs:rw,z" \
+		-v "$$PWD/src:/app/src:ro,z" \
+		-v "$$PWD/scripts:/app/scripts:ro,z" \
+		-v "$$PWD/.git:/app/.git:ro,z" \
+		-v "$$PWD/pyproject.toml:/app/pyproject.toml:ro,z" \
+		localhost/sourcecode_app:latest python scripts/run_curriculum_study.py freeze
+
+curriculum-dry-run: ## Validate Phase 9 frozen inputs and list the 20-run grid
+	$(COMPOSE) run --rm app python scripts/run_curriculum_study.py dry-run
+
+curriculum-dev: ## Run excluded-seed Phase 9 feasibility and validation study
+	$(COMPOSE) run --rm app python scripts/run_curriculum_study.py development
+
+curriculum-run: ## Run canonical matched Phase 9 training/test evaluation in PostgreSQL
+	$(COMPOSE) run --rm app python scripts/run_curriculum_study.py run --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3
