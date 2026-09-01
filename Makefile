@@ -139,7 +139,7 @@ infrastructure-eval: ## Evaluate frozen PPO on all held-out infrastructure profi
 	$(COMPOSE) run --rm app python scripts/evaluate_infrastructure.py --split test --postgres
 
 recurrent-freeze: ## Freeze Phase 8 recurrent-study source/config hashes
-	podman run --rm --user "$$UID:$$GID" -w /app \
+	podman run --rm --user 0:0 -w /app -e MPLCONFIGDIR=/tmp/matplotlib \
 		-e RLREDTEAM_GIT_DIRTY="$$RLREDTEAM_GIT_DIRTY" \
 		-v "$$PWD/configs:/app/configs:rw,z" \
 		-v "$$PWD/src:/app/src:ro,z" \
