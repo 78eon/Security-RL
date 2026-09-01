@@ -324,13 +324,13 @@ def metrics_for_run(
 class Comparison:
     metric: str
     n_pairs: int
-    mean_a: float
-    mean_b: float
+    mean_a: float | None
+    mean_b: float | None
     sd_a: float
     sd_b: float
-    median_a: float
-    median_b: float
-    difference: float
+    median_a: float | None
+    median_b: float | None
+    difference: float | None
     t_statistic: float | None
     p_value: float | None
     p_bonferroni: float | None
@@ -364,16 +364,22 @@ def paired_comparison(
     rules = protocol["statistics"]
 
     if len(shared) < 2:
+        mean_a = statistics.fmean(a) if a else None
+        mean_b = statistics.fmean(b) if b else None
         return Comparison(
             metric=metric,
             n_pairs=len(shared),
-            mean_a=statistics.fmean(a) if a else float("nan"),
-            mean_b=statistics.fmean(b) if b else float("nan"),
+            mean_a=mean_a,
+            mean_b=mean_b,
             sd_a=statistics.stdev(a) if len(a) > 1 else 0.0,
             sd_b=statistics.stdev(b) if len(b) > 1 else 0.0,
-            median_a=statistics.median(a) if a else float("nan"),
-            median_b=statistics.median(b) if b else float("nan"),
-            difference=float("nan"),
+            median_a=statistics.median(a) if a else None,
+            median_b=statistics.median(b) if b else None,
+            difference=(
+                mean_b - mean_a
+                if mean_a is not None and mean_b is not None
+                else None
+            ),
             t_statistic=None,
             p_value=None,
             p_bonferroni=None,
@@ -384,7 +390,6 @@ def paired_comparison(
             assumption_warning="fewer than two matched pairs",
         )
 
-    result = stats.ttest_rel(b, a)
     differences = [x - y for x, y in zip(b, a, strict=True)]
     mean_difference = statistics.fmean(differences)
     spread = statistics.stdev(differences) if len(differences) > 1 else 0.0
@@ -392,13 +397,32 @@ def paired_comparison(
     d = mean_difference / spread if spread > 1e-12 else None
 
     low, high = _bootstrap_ci(differences, rules["bootstrap_samples"], rules["confidence"])
-    p_bonferroni = (
-        min(1.0, float(result.pvalue) * rules["family_size"])
-        if metric in protocol["primary_metrics"]
-        else None
-    )
     threshold = rules["alpha"]
     assumption_warning = None
+    if spread <= 1e-12:
+        if abs(mean_difference) <= 1e-12:
+            t_statistic = 0.0
+            p_value = 1.0
+            assumption_warning = (
+                "paired differences have zero variance and no observed difference"
+            )
+        else:
+            t_statistic = None
+            p_value = None
+            assumption_warning = (
+                "paired differences have zero variance; the paired t-test and "
+                "effect size are undefined"
+            )
+    else:
+        result = stats.ttest_rel(b, a)
+        t_statistic = float(result.statistic)
+        p_value = float(result.pvalue)
+
+    p_bonferroni = (
+        min(1.0, p_value * rules["family_size"])
+        if p_value is not None and metric in protocol["primary_metrics"]
+        else None
+    )
     if len(differences) >= 3 and spread > 1e-12:
         normality_p = float(stats.shapiro(differences).pvalue)
         if normality_p < threshold:
@@ -417,14 +441,15 @@ def paired_comparison(
         median_a=statistics.median(a),
         median_b=statistics.median(b),
         difference=mean_difference,
-        t_statistic=float(result.statistic),
-        p_value=float(result.pvalue),
+        t_statistic=t_statistic,
+        p_value=p_value,
         p_bonferroni=p_bonferroni,
         cohens_d=d,
         ci_low=low,
         ci_high=high,
         significant=bool(
-            (p_bonferroni if p_bonferroni is not None else float(result.pvalue)) < threshold
+            p_value is not None
+            and (p_bonferroni if p_bonferroni is not None else p_value) < threshold
         ),
         assumption_warning=assumption_warning,
     )
@@ -555,5 +580,7 @@ def format_table(report: dict) -> str:
 def write_report(report: dict, out_dir: Path) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "analysis.json").write_text(json.dumps(report, indent=2, default=str))
+    (out_dir / "analysis.json").write_text(
+        json.dumps(report, indent=2, default=str, allow_nan=False)
+    )
     (out_dir / "results_table.txt").write_text(format_table(report) + "\n")

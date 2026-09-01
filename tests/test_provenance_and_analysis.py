@@ -5,6 +5,7 @@ Pure-logic tests: no training, no database, no display.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -514,6 +515,22 @@ def test_constant_difference_reports_no_effect_size(protocol: dict) -> None:
     result = paired_comparison("native_return", a, b, protocol)
     assert result.difference == pytest.approx(1.0)
     assert result.cohens_d is None
+    assert result.t_statistic is None
+    assert result.p_value is None
+    assert result.p_bonferroni is None
+    assert not result.significant
+    assert result.assumption_warning is not None
+
+
+def test_identical_pairs_report_no_observed_difference(protocol: dict) -> None:
+    a = {42: 1.0, 43: 2.0, 44: 3.0}
+    result = paired_comparison("native_return", a, a, protocol)
+    assert result.difference == pytest.approx(0.0)
+    assert result.t_statistic == pytest.approx(0.0)
+    assert result.p_value == pytest.approx(1.0)
+    assert result.p_bonferroni == pytest.approx(1.0)
+    assert result.cohens_d is None
+    assert not result.significant
 
 
 def test_unpaired_seeds_are_dropped_not_compared(protocol: dict) -> None:
@@ -527,7 +544,18 @@ def test_unpaired_seeds_are_dropped_not_compared(protocol: dict) -> None:
 def test_comparison_survives_a_single_pair(protocol: dict) -> None:
     result = paired_comparison("native_return", {42: 1.0}, {42: 2.0}, protocol)
     assert result.n_pairs == 1
+    assert result.difference == pytest.approx(1.0)
     assert result.p_value is None
+    json.dumps(result.to_dict(), allow_nan=False)
+
+
+def test_comparison_without_pairs_is_strict_json(protocol: dict) -> None:
+    result = paired_comparison("native_return", {42: 1.0}, {43: 2.0}, protocol)
+    assert result.n_pairs == 0
+    assert result.mean_a is None
+    assert result.mean_b is None
+    assert result.difference is None
+    json.dumps(result.to_dict(), allow_nan=False)
 
 
 def test_bonferroni_applies_only_to_primary_metrics(protocol: dict) -> None:

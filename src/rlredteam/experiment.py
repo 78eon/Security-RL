@@ -297,7 +297,7 @@ def write_results(
     for folder in ("metadata", "summaries", "tables", "figures", "trajectories"):
         (result_root / folder).mkdir(parents=True, exist_ok=True)
     (result_root / "summaries" / "analysis.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True)
+        json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
     )
     (result_root / "tables" / "results_table.txt").write_text(format_table(report) + "\n")
     _write_csv(
