@@ -5,16 +5,25 @@
   "dependency_lock_hash": "74a17ae310a31d60",
   "experiment_config_sha256": "b0e8b3092e9bdc77d56cd23fd079d3ba7dc2ac0b867fdb16afbe905f3ace178a",
   "experiment_id": "advanced-rl-curriculum-v1",
-  "frozen_at": "2026-09-01T20:23:42.433724+00:00",
-  "protocol_commit": "732efffcfea0b08584d113e63198f8f274d289f8",
+  "frozen_at": "2026-09-02T00:39:22.607971+00:00",
+  "protocol_commit": "79353bd06f81d37e6345af909ab7b7967e942c78",
   "schedule_distribution_sha256": "12b89db0192cabc9302840e118b40705822424870a6b2f6e8e49590041842fb6",
   "schema_version": 1,
   "source_sha256": {
     "scripts/run_curriculum_study.py": "1d4d91e87475e9d2ffb4a97bbb6a3b9bd2c765499f77058b74fea36831a44564",
+    "src/rlredteam/analyse.py": "114945127123964e4b98a5378452f946cf7aa64e0c0373b77e433323bd1ac8d9",
     "src/rlredteam/enterprise/curriculum.py": "11ece02431f963c1f79bcf847b728bff1051a374668c0676e2b09edec6f42b5e",
-    "src/rlredteam/enterprise/curriculum_study.py": "3428cc7c03a7360271d855147c260afa60fe8cbaf6aa0c042cae4b0877581420",
+    "src/rlredteam/enterprise/curriculum_study.py": "e2e580eb7902744c9e304871f3f27d442888e402df723f5777f9ba8fcd7dcba6",
     "src/rlredteam/enterprise/environment.py": "017ab7921fca8966a34ce3f7670dc38bca3cca58eb83d43ac155ac505f5273aa",
+    "src/rlredteam/enterprise/generalisation.py": "97200c337e20fa8a1cd9827bb6332509740edad74d708d2eb12266c9e2b1119c",
+    "src/rlredteam/enterprise/infrastructure_generalisation.py": "d28d952ce2b12401837ba554616282d68a48b54fe6f4310ae57402c8a3fb1681",
+    "src/rlredteam/enterprise/model.py": "c3a728c4698ab6c9ed907d1424459727692e786558cc0472c64a979f5a30b05a",
+    "src/rlredteam/enterprise/onprem.py": "fdedde6a1886182da3f4951283fd1ece967b1d18b29bd850dc94aa90560a5229",
     "src/rlredteam/enterprise/profiles.py": "26f676cd4e74ddb46fe47b532b2de543cd33770d953a0fa6404881111c83a4fa",
-    "src/rlredteam/enterprise/state.py": "72d933a096ccb0c3417cd8acba1b51c1f54da6afba960615b231d195f4f3cc47"
+    "src/rlredteam/enterprise/recurrent.py": "1127472a350beab92b987074c74393f88294ca4b6ac90b5018f0c39f7207280c",
+    "src/rlredteam/enterprise/state.py": "72d933a096ccb0c3417cd8acba1b51c1f54da6afba960615b231d195f4f3cc47",
+    "src/rlredteam/storage/postgres_logger.py": "f84dbc47d9e5567298b5c8061f224009e5913daa5c3dc2eeae455af496a7bf3d",
+    "src/rlredteam/storage/schema.sql": "b4c560dcbc44a2e23b238297833e2bef86ecdc92caa66497297b0b1460ede4d6",
+    "src/rlredteam/train.py": "54b15e38791bf423fe6c45a1806750d64887c8c1adf1688c56b343de4fb90f4a"
   }
 }
