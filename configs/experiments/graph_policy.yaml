@@ -1,0 +1,50 @@
+experiment:
+  id: advanced-rl-graph-policy-v1
+  description: Matched flat-MLP versus AgentKnowledge graph-encoder MaskablePPO study
+  protocol_status: development_then_freeze
+  arms: [flat_mlp, knowledge_graph_gnn]
+  development_seed: 35
+  training_seeds: [301, 302, 303, 304, 305, 306, 307, 308, 309, 310]
+  train_profiles: [legacy, cloud, hybrid]
+  topology_splits:
+    train: [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010, 3011, 3012, 3013, 3014, 3015, 3016, 3017, 3018, 3019, 3020, 3021, 3022, 3023, 3024, 3025, 3026, 3027, 3028, 3029, 3030, 3031, 3032, 3033, 3034, 3035, 3036, 3037, 3038, 3039, 3040, 3041, 3042, 3043, 3044, 3045, 3046, 3047, 3048, 3049, 3050, 3051, 3052, 3053, 3054, 3055, 3056, 3057, 3058, 3059, 3060]
+    validation: [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008, 4009, 4010, 4011, 4012, 4013, 4014, 4015, 4016, 4017, 4018, 4019, 4020]
+    test: [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010, 5011, 5012, 5013, 5014, 5015, 5016, 5017, 5018, 5019, 5020]
+  total_timesteps: 50176
+  evaluation_episode_seeds: [9301]
+  deterministic_evaluation: true
+  runtime_cap_minutes: 120
+  parallel_training_workers: 6
+  common_ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+  baseline_policy:
+    policy_layers: [128, 128]
+  graph_policy:
+    node_hidden_dim: 64
+    message_passing_steps: 2
+    feature_dim: 128
+    policy_layers: [128, 128]
+    pooling: mean_max
+    adjacency: directed_agent_known_binary
+  outcomes:
+    primary_metrics: [success_rate, penalized_steps, total_reward]
+    descriptive_metrics: [discovery_coverage, failed_actions]
+    failure_step_penalty: 201
+  statistics:
+    test: paired_t_test
+    pairing_key: training_seed
+    alpha: 0.05
+    correction: bonferroni
+    family_size: 3
+    effect_size: paired_cohens_d
+    bootstrap_samples: 10000
+    confidence: 0.95
