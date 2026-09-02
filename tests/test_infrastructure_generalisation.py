@@ -10,6 +10,7 @@ import torch
 
 from rlredteam.enterprise.generalisation import (
     GeneralisationError,
+    evaluation_provenance,
     reconstruct_attack_path,
     write_evaluation_package,
 )
@@ -75,6 +76,42 @@ def test_cross_profile_evaluation_refuses_training_seed_overlap() -> None:
         )
 
 
+def test_evaluation_provenance_accepts_legacy_and_matched_study_manifests() -> None:
+    distribution = {"test": {"legacy": {"2001": "topology-hash"}}}
+    legacy = evaluation_provenance(
+        {
+            "experiment_config_hash": "legacy-study",
+            "topology_config_hash": "legacy-profile",
+            "synthetic_vulnerability_manifest_sha256": "legacy-cves",
+            "distribution": distribution,
+        },
+        "test",
+    )
+    matched = evaluation_provenance(
+        {
+            "study_config_hash": "matched-study",
+            "base_profile_config_hash": "matched-profile",
+            "base_vulnerability_snapshot_sha256": "matched-cves",
+            "base_distribution": distribution,
+        },
+        "test",
+    )
+
+    assert legacy["config_hash"] == "legacy-study"
+    assert matched["config_hash"] == "matched-study"
+    assert legacy["topology_config_hash"] == "legacy-profile"
+    assert matched["topology_config_hash"] == "matched-profile"
+    assert legacy["cve_manifest_sha256"] == "legacy-cves"
+    assert matched["cve_manifest_sha256"] == "matched-cves"
+    assert legacy["topology_hash"] == matched["topology_hash"]
+    assert len(matched["topology_hash"]) == 64
+
+
+def test_evaluation_provenance_fails_closed_on_missing_aliases() -> None:
+    with pytest.raises(GeneralisationError, match="config_hash"):
+        evaluation_provenance({"base_distribution": {"test": {}}}, "test")
+
+
 def test_cross_profile_evaluation_is_frozen_masked_and_distinct() -> None:
     model = HighestValidPolicy()
     before = model.policy.weight.detach().clone()
@@ -120,4 +157,3 @@ def test_package_keeps_same_seed_profiles_separate(tmp_path) -> None:
         "hybrid": 1.0,
         "legacy": 1.0,
     }
-

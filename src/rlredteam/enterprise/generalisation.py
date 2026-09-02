@@ -97,8 +97,16 @@ class OnPremExperimentConfig:
         ):
             raise ValueError("evaluation episode seeds must be non-empty and unique")
         required = {
-            "learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
-            "gae_lambda", "clip_range", "ent_coef", "vf_coef", "max_grad_norm",
+            "learning_rate",
+            "n_steps",
+            "batch_size",
+            "n_epochs",
+            "gamma",
+            "gae_lambda",
+            "clip_range",
+            "ent_coef",
+            "vf_coef",
+            "max_grad_norm",
             "policy_layers",
         }
         if set(self.ppo) != required:
@@ -351,6 +359,38 @@ def evaluate_policy(
     return episodes, steps
 
 
+def evaluation_provenance(training_manifest: dict, split_name: str) -> dict[str, str]:
+    """Normalize provenance fields shared by legacy and matched-study manifests."""
+
+    aliases = {
+        "config_hash": ("experiment_config_hash", "study_config_hash"),
+        "topology_config_hash": ("topology_config_hash", "base_profile_config_hash"),
+        "cve_manifest_sha256": (
+            "synthetic_vulnerability_manifest_sha256",
+            "base_vulnerability_snapshot_sha256",
+        ),
+    }
+    normalized = {}
+    for output_name, candidates in aliases.items():
+        value = next(
+            (training_manifest[name] for name in candidates if name in training_manifest),
+            None,
+        )
+        if value is None:
+            raise GeneralisationError(
+                f"training manifest lacks {output_name}: expected one of {candidates}"
+            )
+        normalized[output_name] = str(value)
+
+    distribution = training_manifest.get("distribution", training_manifest.get("base_distribution"))
+    if not isinstance(distribution, dict) or split_name not in distribution:
+        raise GeneralisationError(
+            f"training manifest lacks the {split_name!r} topology distribution"
+        )
+    normalized["topology_hash"] = _canonical_digest(distribution[split_name])
+    return normalized
+
+
 def persist_evaluation(
     *,
     episodes: list[dict],
@@ -364,6 +404,7 @@ def persist_evaluation(
 
     if not episodes:
         raise GeneralisationError("cannot persist an empty evaluation")
+    provenance = evaluation_provenance(training_manifest, split_name)
     grouped: dict[tuple[str, int, int], list[dict]] = {}
     for step in steps:
         key = (
@@ -376,12 +417,10 @@ def persist_evaluation(
     logger = EpisodeLogger.start(
         name=f"{training_manifest['experiment_id']}-{split_name}",
         reward_mode="enterprise_shaped",
-        config_hash=str(training_manifest["experiment_config_hash"]),
-        topology_config_hash=str(training_manifest["topology_config_hash"]),
-        topology_hash=_canonical_digest(training_manifest["distribution"][split_name]),
-        cve_manifest_sha256=str(
-            training_manifest["synthetic_vulnerability_manifest_sha256"]
-        ),
+        config_hash=provenance["config_hash"],
+        topology_config_hash=provenance["topology_config_hash"],
+        topology_hash=provenance["topology_hash"],
+        cve_manifest_sha256=provenance["cve_manifest_sha256"],
         seed_set=[int(training_manifest["training_seed"])],
         condition="unseen_topology_generalisation",
         algorithm=str(training_manifest.get("algorithm", "MaskablePPO")),
@@ -492,8 +531,7 @@ def write_evaluation_package(
             step
             for step in steps
             if str(step.get("profile", "on_premises")) == profile
-            if step["topology_seed"] == topology_seed
-            and step["evaluation_seed"] == evaluation_seed
+            if step["topology_seed"] == topology_seed and step["evaluation_seed"] == evaluation_seed
         ]
         attack_paths.append(
             {
@@ -529,10 +567,7 @@ def write_evaluation_package(
                 for row in episodes
                 if str(row.get("profile", "on_premises")) == profile
             )
-            / sum(
-                str(row.get("profile", "on_premises")) == profile
-                for row in episodes
-            )
+            / sum(str(row.get("profile", "on_premises")) == profile for row in episodes)
         )
         for profile in profiles
     }

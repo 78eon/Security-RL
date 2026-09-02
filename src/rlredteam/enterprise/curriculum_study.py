@@ -71,11 +71,20 @@ def current_input_manifest(config: CurriculumResearchConfig) -> dict[str, Any]:
     schedule = {arm: stage_distribution_manifest(config, arm) for arm in config.arms}
     base_distribution = infrastructure_distribution_manifest(split, base, config.train_profiles)
     source_files = (
+        REPO_ROOT / "src" / "rlredteam" / "analyse.py",
+        REPO_ROOT / "src" / "rlredteam" / "train.py",
         REPO_ROOT / "src" / "rlredteam" / "enterprise" / "curriculum.py",
         REPO_ROOT / "src" / "rlredteam" / "enterprise" / "curriculum_study.py",
+        REPO_ROOT / "src" / "rlredteam" / "enterprise" / "generalisation.py",
+        REPO_ROOT / "src" / "rlredteam" / "enterprise" / "infrastructure_generalisation.py",
+        REPO_ROOT / "src" / "rlredteam" / "enterprise" / "model.py",
+        REPO_ROOT / "src" / "rlredteam" / "enterprise" / "onprem.py",
         REPO_ROOT / "src" / "rlredteam" / "enterprise" / "profiles.py",
+        REPO_ROOT / "src" / "rlredteam" / "enterprise" / "recurrent.py",
         REPO_ROOT / "src" / "rlredteam" / "enterprise" / "environment.py",
         REPO_ROOT / "src" / "rlredteam" / "enterprise" / "state.py",
+        REPO_ROOT / "src" / "rlredteam" / "storage" / "postgres_logger.py",
+        REPO_ROOT / "src" / "rlredteam" / "storage" / "schema.sql",
         REPO_ROOT / "scripts" / "run_curriculum_study.py",
     )
     return {

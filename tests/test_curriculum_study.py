@@ -41,11 +41,20 @@ def test_phase9_input_manifest_hashes_every_research_boundary() -> None:
     assert len(manifest["base_distribution_sha256"]) == 64
     assert set(manifest["source_sha256"]) == {
         "scripts/run_curriculum_study.py",
+        "src/rlredteam/analyse.py",
+        "src/rlredteam/train.py",
         "src/rlredteam/enterprise/curriculum.py",
         "src/rlredteam/enterprise/curriculum_study.py",
         "src/rlredteam/enterprise/environment.py",
+        "src/rlredteam/enterprise/generalisation.py",
+        "src/rlredteam/enterprise/infrastructure_generalisation.py",
+        "src/rlredteam/enterprise/model.py",
+        "src/rlredteam/enterprise/onprem.py",
         "src/rlredteam/enterprise/profiles.py",
+        "src/rlredteam/enterprise/recurrent.py",
         "src/rlredteam/enterprise/state.py",
+        "src/rlredteam/storage/postgres_logger.py",
+        "src/rlredteam/storage/schema.sql",
     }
 
 
