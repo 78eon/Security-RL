@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -178,6 +178,9 @@ curriculum-dev: ## Run excluded-seed Phase 9 feasibility and validation study
 
 curriculum-run: ## Run canonical matched Phase 9 training/test evaluation in PostgreSQL
 	$(COMPOSE) run --rm app python scripts/run_curriculum_study.py run --postgres
+
+curriculum-verify: ## Verify Phase 9 files, checkpoints and PostgreSQL reconstruction
+	$(COMPOSE) run --rm app python scripts/verify_curriculum_completion.py --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3
