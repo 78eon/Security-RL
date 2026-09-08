@@ -1,0 +1,51 @@
+experiment:
+  id: advanced-rl-transfer-v1
+  description: Matched graph-policy legacy/cloud-to-hybrid transfer sample-efficiency study
+  protocol_status: development_then_freeze
+  arms: [scratch_hybrid, transfer_legacy_cloud_to_hybrid]
+  development_seed: 36
+  training_seeds: [401, 402, 403, 404, 405, 406, 407, 408, 409, 410]
+  source_profiles: [legacy, cloud]
+  target_profiles: [hybrid]
+  topology_splits:
+    source_train: [6001, 6002, 6003, 6004, 6005, 6006, 6007, 6008, 6009, 6010, 6011, 6012, 6013, 6014, 6015, 6016, 6017, 6018, 6019, 6020, 6021, 6022, 6023, 6024, 6025, 6026, 6027, 6028, 6029, 6030, 6031, 6032, 6033, 6034, 6035, 6036, 6037, 6038, 6039, 6040]
+    target_train: [7001, 7002, 7003, 7004, 7005, 7006, 7007, 7008, 7009, 7010, 7011, 7012, 7013, 7014, 7015, 7016, 7017, 7018, 7019, 7020]
+    validation: [8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8010, 8011, 8012, 8013, 8014, 8015, 8016, 8017, 8018, 8019, 8020]
+    test: [9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010, 9011, 9012, 9013, 9014, 9015, 9016, 9017, 9018, 9019, 9020]
+  source_pretrain_timesteps: 25600
+  target_adaptation_timesteps: 12800
+  evaluation_episode_seeds: [9401]
+  deterministic_evaluation: true
+  runtime_cap_minutes: 90
+  parallel_training_workers: 6
+  common_ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+  graph_policy:
+    node_hidden_dim: 64
+    message_passing_steps: 2
+    feature_dim: 128
+    policy_layers: [128, 128]
+    pooling: mean_max
+    adjacency: directed_agent_known_binary
+  outcomes:
+    primary_metrics: [success_rate, penalized_steps, total_reward]
+    descriptive_metrics: [discovery_coverage, failed_actions]
+    failure_step_penalty: 201
+  statistics:
+    test: paired_t_test
+    pairing_key: training_seed
+    alpha: 0.05
+    correction: bonferroni
+    family_size: 3
+    effect_size: paired_cohens_d
+    bootstrap_samples: 10000
+    confidence: 0.95

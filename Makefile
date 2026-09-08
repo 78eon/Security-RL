@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -203,6 +203,25 @@ graph-run: ## Run canonical matched Phase 10 training/test evaluation in Postgre
 
 graph-verify: ## Verify Phase 10 files, checkpoints and PostgreSQL reconstruction
 	$(COMPOSE) run --rm app python scripts/verify_graph_policy_completion.py --postgres
+
+transfer-freeze: ## Freeze Phase 11 transfer-learning source/config hashes
+	podman run --rm --user 0:0 -w /app -e MPLCONFIGDIR=/tmp/matplotlib \
+		-e RLREDTEAM_GIT_DIRTY="$$RLREDTEAM_GIT_DIRTY" \
+		-v "$$PWD/configs:/app/configs:rw,z" \
+		-v "$$PWD/src:/app/src:ro,z" \
+		-v "$$PWD/scripts:/app/scripts:ro,z" \
+		-v "$$PWD/.git:/app/.git:ro,z" \
+		-v "$$PWD/pyproject.toml:/app/pyproject.toml:ro,z" \
+		localhost/sourcecode_app:latest python scripts/run_transfer_study.py freeze
+
+transfer-dry-run: ## Validate Phase 11 frozen inputs and list the 20-run grid
+	$(COMPOSE) run --rm app python scripts/run_transfer_study.py dry-run
+
+transfer-dev: ## Run excluded-seed Phase 11 feasibility and validation study
+	$(COMPOSE) run --rm app python scripts/run_transfer_study.py development
+
+transfer-run: ## Run canonical matched Phase 11 training/test evaluation in PostgreSQL
+	$(COMPOSE) run --rm app python scripts/run_transfer_study.py run --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3
