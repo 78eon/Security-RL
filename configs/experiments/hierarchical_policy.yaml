@@ -1,0 +1,56 @@
+experiment:
+  id: advanced-rl-hierarchical-policy-v1
+  description: Matched flat versus factorized hierarchical AgentKnowledge graph-policy study
+  protocol_status: development_then_freeze
+  arms: [flat_graph, hierarchical_graph]
+  development_seed: 37
+  training_seeds: [501, 502, 503, 504, 505, 506, 507, 508, 509, 510]
+  train_profiles: [legacy, cloud, hybrid]
+  topology_splits:
+    train: [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010, 10011, 10012, 10013, 10014, 10015, 10016, 10017, 10018, 10019, 10020, 10021, 10022, 10023, 10024, 10025, 10026, 10027, 10028, 10029, 10030, 10031, 10032, 10033, 10034, 10035, 10036, 10037, 10038, 10039, 10040, 10041, 10042, 10043, 10044, 10045, 10046, 10047, 10048, 10049, 10050, 10051, 10052, 10053, 10054, 10055, 10056, 10057, 10058, 10059, 10060]
+    validation: [11001, 11002, 11003, 11004, 11005, 11006, 11007, 11008, 11009, 11010, 11011, 11012, 11013, 11014, 11015, 11016, 11017, 11018, 11019, 11020]
+    test: [12001, 12002, 12003, 12004, 12005, 12006, 12007, 12008, 12009, 12010, 12011, 12012, 12013, 12014, 12015, 12016, 12017, 12018, 12019, 12020]
+  total_timesteps: 25600
+  evaluation_episode_seeds: [9501]
+  deterministic_evaluation: true
+  runtime_cap_minutes: 90
+  parallel_training_workers: 6
+  common_ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+  graph_policy:
+    node_hidden_dim: 64
+    message_passing_steps: 2
+    feature_dim: 128
+    policy_layers: [128, 128]
+    pooling: mean_max
+    adjacency: directed_agent_known_binary
+  hierarchy:
+    objectives: [discover, gain_access, control, reach_asset]
+    discover: [discover_network, enumerate_host, enumerate_service, enumerate_application, assess_vulnerability]
+    gain_access: [exploit, obtain_credential, authenticate]
+    control: [pivot, escalate_privilege]
+    reach_asset: [access_asset]
+    distribution: objective_then_conditional_action
+    transition_semantics: one_concrete_action_per_environment_step
+  outcomes:
+    primary_metrics: [success_rate, penalized_steps, total_reward]
+    descriptive_metrics: [discovery_coverage, failed_actions]
+    failure_step_penalty: 201
+  statistics:
+    test: paired_t_test
+    pairing_key: training_seed
+    alpha: 0.05
+    correction: bonferroni
+    family_size: 3
+    effect_size: paired_cohens_d
+    bootstrap_samples: 10000
+    confidence: 0.95
