@@ -14,6 +14,7 @@ from rlredteam.enterprise.hierarchical_policy import (
     phase12_policy,
     phase12_policy_kwargs,
 )
+from rlredteam.enterprise.profiles import DeploymentProfile, InfrastructureCurriculumEnv
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +42,19 @@ def test_objective_mapping_is_topology_free_and_partitions_public_catalogue() ->
     assert set(mapping) == set(range(len(OBJECTIVES)))
     assert not any("CVE-" in item for item in catalogue)
     assert all("slot_" in item for item in catalogue)
+    expected_objective = {
+        action: option
+        for option, objective in enumerate(OBJECTIVES)
+        for action in config.hierarchy[objective]
+    }
+    for index, action in enumerate(catalogue):
+        assert mapping[index] == expected_objective[action.split(":", 1)[0]]
+    assert catalogue[-1].startswith("exploit:")
+    assert mapping[-1] == OBJECTIVES.index("gain_access")
+    environment = InfrastructureCurriculumEnv((10001,), (DeploymentProfile.HYBRID,))
+    environment.reset(seed=9501)
+    actual_catalogue = tuple(action.name for action in environment._env.actions)
+    assert catalogue == actual_catalogue
     kwargs = phase12_policy_kwargs(config, "hierarchical_graph")
     assert set(kwargs) == {
         "features_extractor_class",

@@ -162,7 +162,7 @@ def action_to_objective(config: HierarchicalResearchConfig) -> tuple[int, ...]:
         for action in config.hierarchy[objective]
     }
     mapping: list[int] = []
-    for action_type in EnterpriseActionType:
+    for action_type in _fixed_action_type_order():
         count = (
             profile.max_vulnerabilities
             if action_type == EnterpriseActionType.EXPLOIT
@@ -173,6 +173,14 @@ def action_to_objective(config: HierarchicalResearchConfig) -> tuple[int, ...]:
     if len(mapping) != expected:
         raise ValueError("hierarchical action mapping differs from fixed action catalogue")
     return tuple(mapping)
+
+
+def _fixed_action_type_order() -> tuple[EnterpriseActionType, ...]:
+    """Mirror EnterpriseCyberEnv's public slot-block order exactly."""
+    non_exploit = tuple(
+        kind for kind in EnterpriseActionType if kind != EnterpriseActionType.EXPLOIT
+    )
+    return (*non_exploit, EnterpriseActionType.EXPLOIT)
 
 
 class HierarchicalLogitHead(nn.Module):
@@ -357,15 +365,18 @@ def phase12_policy_kwargs(config: HierarchicalResearchConfig, arm: str) -> dict[
 def fixed_action_catalogue() -> tuple[str, ...]:
     """Evidence helper: build the catalogue without any enterprise topology."""
     profile = EnterpriseProfileConfig.from_yaml()
-    non_exploit = [kind for kind in EnterpriseActionType if kind != EnterpriseActionType.EXPLOIT]
-    return tuple(
-        [
-            f"{kind.value}:node_slot_{slot}"
-            for kind in non_exploit
-            for slot in range(profile.max_nodes)
-        ]
-        + [f"exploit:vulnerability_slot_{slot}" for slot in range(profile.max_vulnerabilities)]
-    )
+    items: list[str] = []
+    for kind in _fixed_action_type_order():
+        if kind == EnterpriseActionType.EXPLOIT:
+            items.extend(
+                f"{kind.value}:vulnerability_slot_{slot}"
+                for slot in range(profile.max_vulnerabilities)
+            )
+        else:
+            items.extend(
+                f"{kind.value}:node_slot_{slot}" for slot in range(profile.max_nodes)
+            )
+    return tuple(items)
 
 
 _profile = EnterpriseProfileConfig.from_yaml()
