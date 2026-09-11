@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -247,6 +247,31 @@ hierarchical-run: ## Run canonical matched Phase 12 training/test evaluation in 
 
 hierarchical-verify: ## Verify Phase 12 files, checkpoints and PostgreSQL reconstruction
 	$(COMPOSE) run --rm app python scripts/verify_hierarchical_completion.py --postgres
+
+multiagent-freeze: ## Freeze Phase 13 red-blue study source/config/defender hashes
+	podman run --rm --user 0:0 -w /app -e MPLCONFIGDIR=/tmp/matplotlib \
+		-e RLREDTEAM_GIT_DIRTY="$$RLREDTEAM_GIT_DIRTY" \
+		-v "$$PWD/configs:/app/configs:rw,z" \
+		-v "$$PWD/src:/app/src:ro,z" \
+		-v "$$PWD/scripts:/app/scripts:ro,z" \
+		-v "$$PWD/runs:/app/runs:ro,z" \
+		-v "$$PWD/results:/app/results:ro,z" \
+		-v "$$PWD/docs:/app/docs:ro,z" \
+		-v "$$PWD/.git:/app/.git:ro,z" \
+		-v "$$PWD/pyproject.toml:/app/pyproject.toml:ro,z" \
+		localhost/sourcecode_app:latest python scripts/run_multiagent_study.py freeze
+
+multiagent-dry-run: ## Validate Phase 13 frozen inputs and list the 20-run grid
+	$(COMPOSE) run --rm app python scripts/run_multiagent_study.py dry-run
+
+multiagent-dev: ## Run full-budget excluded-seed Phase 13 red-blue development gate
+	$(COMPOSE) run --rm app python scripts/run_multiagent_study.py development
+
+multiagent-run: ## Run canonical Phase 13 matched study with PostgreSQL telemetry
+	$(COMPOSE) run --rm app python scripts/run_multiagent_study.py run --postgres
+
+multiagent-verify: ## Verify Phase 13 artifacts and exact PostgreSQL reconstruction
+	$(COMPOSE) run --rm app python scripts/verify_multiagent_completion.py --postgres
 
 hybrid-smoke:   ## Feasibility baseline on three held-out hybrid topologies
 	$(COMPOSE) run --rm app python scripts/evaluate_hybrid.py --split test --limit 3

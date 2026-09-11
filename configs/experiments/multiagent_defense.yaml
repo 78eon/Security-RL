@@ -1,0 +1,96 @@
+experiment:
+  id: advanced-rl-multiagent-defense-v1
+  description: Matched static-versus-adaptive defender training for hierarchical red PPO
+  protocol_status: development_then_freeze
+  arms: [static_defender_training, adaptive_defender_training]
+  development_seed: 47
+  training_seeds: [601, 602, 603, 604, 605, 606, 607, 608, 609, 610]
+  train_profiles: [legacy, cloud, hybrid]
+  topology_splits:
+    train: [13001, 13002, 13003, 13004, 13005, 13006, 13007, 13008, 13009, 13010, 13011, 13012, 13013, 13014, 13015, 13016, 13017, 13018, 13019, 13020, 13021, 13022, 13023, 13024, 13025, 13026, 13027, 13028, 13029, 13030, 13031, 13032, 13033, 13034, 13035, 13036, 13037, 13038, 13039, 13040, 13041, 13042, 13043, 13044, 13045, 13046, 13047, 13048, 13049, 13050, 13051, 13052, 13053, 13054, 13055, 13056, 13057, 13058, 13059, 13060]
+    validation: [14001, 14002, 14003, 14004, 14005, 14006, 14007, 14008, 14009, 14010, 14011, 14012, 14013, 14014, 14015, 14016, 14017, 14018, 14019, 14020]
+    test: [15001, 15002, 15003, 15004, 15005, 15006, 15007, 15008, 15009, 15010, 15011, 15012, 15013, 15014, 15015, 15016, 15017, 15018, 15019, 15020]
+  red_total_timesteps: 25600
+  defender_total_timesteps: 25600
+  evaluation_episode_seeds: [9601]
+  deterministic_evaluation: true
+  runtime_cap_minutes: 90
+  parallel_training_workers: 6
+  red_ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+  defender_ppo:
+    learning_rate: 0.0003
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.02
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+    policy_layers: [64, 64]
+  graph_policy:
+    node_hidden_dim: 64
+    message_passing_steps: 2
+    feature_dim: 128
+    policy_layers: [128, 128]
+    pooling: mean_max
+    adjacency: directed_agent_known_binary
+  hierarchy:
+    objectives: [discover, gain_access, control, reach_asset]
+    discover: [discover_network, enumerate_host, enumerate_service, enumerate_application, assess_vulnerability]
+    gain_access: [exploit, obtain_credential, authenticate]
+    control: [pivot, escalate_privilege]
+    reach_asset: [access_asset]
+    distribution: objective_then_conditional_action
+    transition_semantics: one_concrete_action_per_environment_step
+  defense:
+    ids_levels: [sensitive, balanced, permissive]
+    initial_ids_level: balanced
+    ids_multipliers: [1.3, 1.0, 0.65]
+    base_detection_probability:
+      discover_network: 0.08
+      enumerate_host: 0.10
+      enumerate_service: 0.12
+      enumerate_application: 0.12
+      assess_vulnerability: 0.18
+      exploit: 0.65
+      obtain_credential: 0.28
+      authenticate: 0.25
+      pivot: 0.45
+      escalate_privilege: 0.55
+      access_asset: 0.70
+    patch_delay_episodes: 5
+    mitigated_exploit_probability: 0.25
+    red_detection_penalty: -8.0
+    blue_reward:
+      detection: 2.0
+      mitigation_block: 8.0
+      red_progress: -0.2
+      red_goal: -30.0
+      timeout_without_goal: 20.0
+      threshold_change_cost: -0.05
+      patch_schedule_cost: -0.25
+  outcomes:
+    primary_metrics: [success_rate, detection_rate, penalized_steps]
+    descriptive_metrics: [evasion_rate, total_reward, native_reward, mitigation_block_rate, discovery_coverage, failed_actions]
+    failure_step_penalty: 201
+  statistics:
+    test: paired_t_test
+    pairing_key: training_seed
+    alpha: 0.05
+    correction: bonferroni
+    family_size: 3
+    effect_size: paired_cohens_d
+    bootstrap_samples: 10000
+    confidence: 0.95
