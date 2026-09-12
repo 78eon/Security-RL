@@ -181,3 +181,42 @@ class TopologyView:
             if len(digits) == 2:
                 out.add((digits[0], digits[1]))
         return out
+
+
+@dataclass(frozen=True, slots=True)
+class StudyMetric:
+    """One paired comparison from a canonical research analysis."""
+
+    name: str
+    arm_a_mean: float | None
+    arm_b_mean: float | None
+    difference: float | None
+    p_value: float | None
+    p_adjusted: float | None
+    effect_size: float | None
+    significant: bool
+    primary: bool
+    warning: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StudySummary:
+    """Small, presentation-safe view of one local canonical study package."""
+
+    phase: int
+    study_id: str
+    title: str
+    arm_a: str
+    arm_b: str
+    complete: bool
+    outcome: str
+    code_commit: str
+    config_hash: str
+    result_path: str
+    training_seeds: int
+    evaluation_episodes: int
+    metrics: list[StudyMetric] = field(default_factory=list)
+
+    @property
+    def primary_metrics(self) -> list[StudyMetric]:
+        return [metric for metric in self.metrics if metric.primary]

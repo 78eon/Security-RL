@@ -1,3 +1,5 @@
+"""Native PySide6 research console backed by current repository evidence."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +9,6 @@ from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
-    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -15,8 +16,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
-    QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -28,17 +27,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui import theme
 from gui.backend import ApplicationBackend, BackendPort, DashboardData
-from gui.data.models import TopologyView
+from gui.data.models import StudySummary
+from gui.widgets.enterprise_graph import EnterpriseGraph
 from gui.workers.query import run_async
 
-COLORS = {"cyan": "#48dbe2", "lime": "#b7f04a", "amber": "#ffba52", "red": "#ff6174"}
 
-
-def label(text: str, name: str = "") -> QLabel:
+def label(text: str, name: str = "", *, wrap: bool = False) -> QLabel:
     item = QLabel(text)
     if name:
         item.setObjectName(name)
+    item.setWordWrap(wrap)
     return item
 
 
@@ -52,36 +52,58 @@ def button(text: str, name: str = "Action") -> QPushButton:
 def panel(layout=None, name: str = "Panel") -> QFrame:
     frame = QFrame()
     frame.setObjectName(name)
-    if layout:
-        layout.setContentsMargins(15, 15, 15, 15)
+    if layout is not None:
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
         frame.setLayout(layout)
     return frame
 
 
+def configure_table(table: QTableWidget, *, stretch_column: int = 0) -> None:
+    table.setAlternatingRowColors(True)
+    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.verticalHeader().setVisible(False)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    table.horizontalHeader().setSectionResizeMode(
+        stretch_column, QHeaderView.ResizeMode.Stretch
+    )
+
+
 def fill_table(table: QTableWidget, rows) -> None:
+    table.setSortingEnabled(False)
     table.setRowCount(len(rows))
     for row_index, row in enumerate(rows):
         for column, value in enumerate(row):
-            table.setItem(row_index, column, QTableWidgetItem(str(value)))
+            text = str(value)
+            item = QTableWidgetItem(text)
+            item.setToolTip(text)
+            table.setItem(row_index, column, item)
 
 
 def percent(value: float | None) -> str:
     return "—" if value is None else f"{100 * value:.1f}%"
 
 
-def number(value: float | None, suffix: str = "") -> str:
-    return "—" if value is None else f"{value:.1f}{suffix}"
+def number(value: float | None, decimals: int = 1) -> str:
+    return "—" if value is None else theme.fmt_num(value, decimals)
+
+
+def metric_name(value: str) -> str:
+    return value.replace("_", " ").title()
 
 
 class Metric(QFrame):
-    def __init__(self, title: str, value: str = "Loading…", detail: str = "") -> None:
+    def __init__(self, title: str, value: str = "—", detail: str = "") -> None:
         super().__init__()
         self.setObjectName("Metric")
         box = QVBoxLayout(self)
         box.setContentsMargins(16, 14, 16, 14)
+        box.setSpacing(3)
         box.addWidget(label(title, "MetricLabel"))
         self.value = label(value, "MetricValue")
-        self.detail = label(detail, "Muted")
+        self.detail = label(detail, "Muted", wrap=True)
         box.addWidget(self.value)
         box.addWidget(self.detail)
 
@@ -90,67 +112,262 @@ class Metric(QFrame):
         self.detail.setText(detail)
 
 
-class AttackGraph(QWidget):
+class StateBanner(QFrame):
     def __init__(self) -> None:
         super().__init__()
-        self.setMinimumHeight(340)
-        self.topology = TopologyView()
+        self.setObjectName("StateBanner")
+        box = QHBoxLayout(self)
+        box.setContentsMargins(14, 11, 14, 11)
+        self.state = label("LOADING", "StateLabel")
+        self.message = label("Loading backend snapshot…", "Muted", wrap=True)
+        box.addWidget(self.state)
+        box.addWidget(self.message, 1)
 
-    def set_topology(self, topology: TopologyView) -> None:
-        self.topology = topology
-        self.update()
+    def update_state(self, state: str, message: str, kind: str = "ok") -> None:
+        self.state.setText(state.upper())
+        self.state.setProperty("kind", kind)
+        self.state.style().unpolish(self.state)
+        self.state.style().polish(self.state)
+        self.message.setText(message)
 
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#081316"))
-        painter.setPen(QPen(QColor("#10282d"), 1))
-        for x in range(0, self.width(), 30):
-            painter.drawLine(x, 0, x, self.height())
-        for y in range(0, self.height(), 30):
-            painter.drawLine(0, y, self.width(), y)
-        subnet_count = max(self.topology.num_subnets, len(self.topology.subnets))
-        if not subnet_count:
-            painter.setPen(QColor("#698087"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No persisted topology")
+
+class Page(QWidget):
+    def __init__(self, eyebrow: str, title: str, subtitle: str = "") -> None:
+        super().__init__()
+        self.root = QVBoxLayout(self)
+        self.root.setContentsMargins(0, 18, 0, 18)
+        self.root.setSpacing(12)
+        self.eyebrow = label(eyebrow, "Eyebrow")
+        self.title = label(title, "ViewTitle")
+        self.subtitle = label(subtitle, "Muted", wrap=True)
+        self.root.addWidget(self.eyebrow)
+        self.root.addWidget(self.title)
+        if subtitle:
+            self.root.addWidget(self.subtitle)
+
+
+class OverviewPage(Page):
+    def __init__(self) -> None:
+        super().__init__(
+            "RESEARCH STATUS",
+            "Mission control",
+            "One consistent view of the latest canonical study and live storage backend.",
+        )
+        self.banner = StateBanner()
+        self.root.addWidget(self.banner)
+        self.study_panel = panel(QVBoxLayout(), "HeroPanel")
+        self.study_phase = label("NO CANONICAL STUDY", "Eyebrow")
+        self.study_name = label("Generated evidence has not been found", "HeroTitle")
+        self.study_outcome = label(
+            "Run a canonical study or mount the local results directory.", "Muted", wrap=True
+        )
+        self.study_panel.layout().addWidget(self.study_phase)
+        self.study_panel.layout().addWidget(self.study_name)
+        self.study_panel.layout().addWidget(self.study_outcome)
+        self.root.addWidget(self.study_panel)
+
+        metric_row = QHBoxLayout()
+        self.studies = Metric("COMPLETED PHASES", "—", "Canonical local evidence")
+        self.episodes = Metric("EVALUATION EPISODES", "—", "Latest study")
+        self.signals = Metric("PRIMARY SIGNALS", "—", "Multiplicity controlled")
+        self.runs = Metric("STORED RUNS", "—", "PostgreSQL + artifact-only")
+        for item in (self.studies, self.episodes, self.signals, self.runs):
+            metric_row.addWidget(item)
+        self.root.addLayout(metric_row)
+
+        metrics_panel = panel(QVBoxLayout())
+        metrics_panel.layout().addWidget(label("LATEST PRIMARY COMPARISONS", "SectionTitle"))
+        self.metric_table = QTableWidget(0, 6)
+        self.metric_table.setHorizontalHeaderLabels(
+            ["Metric", "Reference", "Candidate", "Difference", "Adjusted p", "Verdict"]
+        )
+        configure_table(self.metric_table, stretch_column=0)
+        self.metric_table.setMinimumHeight(220)
+        metrics_panel.layout().addWidget(self.metric_table)
+        self.root.addWidget(metrics_panel)
+        self.root.addStretch(1)
+
+    def apply(self, data: DashboardData) -> None:
+        kind = "warn" if data.source_status.startswith("Artefact mode") else "ok"
+        self.banner.update_state(
+            "DEGRADED" if kind == "warn" else "CONNECTED", data.source_status, kind
+        )
+        complete = [study for study in data.studies if study.complete]
+        latest = data.studies[0] if data.studies else None
+        self.studies.update_value(str(len(complete)), "Phase 7–13 packages")
+        self.runs.update_value(str(len(data.campaigns)), "Deduplicated records")
+        if latest is None:
+            self.episodes.update_value("—", "No current study")
+            self.signals.update_value("—", "No primary statistics")
+            fill_table(self.metric_table, [])
             return
-        columns = min(4, subnet_count)
-        rows = ceil(subnet_count / columns)
-        points = []
-        for index in range(subnet_count):
-            col, row = index % columns, index // columns
-            points.append(
+        state = "COMPLETE" if latest.complete else "PARTIAL"
+        self.study_phase.setText(f"PHASE {latest.phase} · {state}")
+        self.study_name.setText(latest.title)
+        self.study_outcome.setText(
+            f"{latest.outcome} · {latest.training_seeds} matched training seeds · "
+            f"commit {latest.code_commit[:8] or 'unavailable'}"
+        )
+        self.episodes.update_value(f"{latest.evaluation_episodes:,}", "Frozen-policy outcomes")
+        signals = sum(metric.significant for metric in latest.primary_metrics)
+        self.signals.update_value(
+            str(signals), f"of {len(latest.primary_metrics)} primary metrics"
+        )
+        fill_table(
+            self.metric_table,
+            [
                 (
-                    40 + col * max(150, (self.width() - 140) // columns),
-                    45 + row * max(110, (self.height() - 90) // rows),
+                    metric_name(metric.name),
+                    number(metric.arm_a_mean, 3),
+                    number(metric.arm_b_mean, 3),
+                    number(metric.difference, 3),
+                    number(metric.p_adjusted, 4),
+                    "SIGNIFICANT" if metric.significant else "NO SIGNAL",
                 )
+                for metric in latest.primary_metrics
+            ],
+        )
+
+
+class SimulationPage(Page):
+    """Run and inspect one real backend-generated offline enterprise graph."""
+
+    def __init__(self, backend: BackendPort, notify) -> None:
+        super().__init__(
+            "OFFLINE ENTERPRISE BACKEND",
+            "Simulator",
+            "Generate a hidden legacy, cloud, hybrid or on-premises topology and replay "
+            "the trace-derived causal route. No network traffic is produced.",
+        )
+        self.backend, self.notify = backend, notify
+        controls = panel(QHBoxLayout())
+        controls.layout().addWidget(label("Environment", "FieldLabel"))
+        self.profile = QComboBox()
+        self.profile.setMinimumWidth(190)
+        controls.layout().addWidget(self.profile)
+        controls.layout().addWidget(label("Topology seed", "FieldLabel"))
+        self.seed = QSpinBox()
+        self.seed.setRange(0, 2_147_483_647)
+        self.seed.setValue(2001)
+        controls.layout().addWidget(self.seed)
+        controls.layout().addStretch()
+        self.run_button = button("Generate and simulate", "Primary")
+        self.run_button.setEnabled(False)
+        self.run_button.clicked.connect(self.run)
+        controls.layout().addWidget(self.run_button)
+        self.replay_button = button("Replay causal route")
+        self.replay_button.setEnabled(False)
+        self.replay_button.clicked.connect(self.graph_replay)
+        controls.layout().addWidget(self.replay_button)
+        self.root.addWidget(controls)
+        self.banner = StateBanner()
+        self.banner.update_state("READY", "Loading supported profiles…")
+        self.root.addWidget(self.banner)
+
+        metric_row = QHBoxLayout()
+        self.outcome = Metric("OUTCOME", "READY", "Backend not yet executed")
+        self.entities = Metric("ENTITIES", "—", "Typed graph nodes")
+        self.relationships = Metric("RELATIONSHIPS", "—", "Typed graph edges")
+        self.coverage = Metric("DISCOVERY COVERAGE", "—", "AgentKnowledge")
+        for item in (self.outcome, self.entities, self.relationships, self.coverage):
+            metric_row.addWidget(item)
+        self.root.addLayout(metric_row)
+
+        graph_panel = panel(QVBoxLayout())
+        graph_head = QHBoxLayout()
+        graph_head.addWidget(label("FULL TYPED TOPOLOGY", "SectionTitle"))
+        graph_head.addStretch()
+        graph_head.addWidget(label("Drag to pan · wheel to zoom · amber = causal route", "Muted"))
+        graph_panel.layout().addLayout(graph_head)
+        self.graph = EnterpriseGraph()
+        graph_panel.layout().addWidget(self.graph)
+        self.root.addWidget(graph_panel)
+
+        entity_panel = panel(QVBoxLayout())
+        entity_panel.layout().addWidget(label("ENTITY INVENTORY", "SectionTitle"))
+        self.nodes = QTableWidget(0, 4)
+        self.nodes.setHorizontalHeaderLabels(["Entity", "Type", "Display name", "Attributes"])
+        configure_table(self.nodes, stretch_column=2)
+        self.nodes.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.nodes.setMaximumHeight(230)
+        entity_panel.layout().addWidget(self.nodes)
+        self.root.addWidget(entity_panel)
+
+        if hasattr(self.backend, "simulation_profiles"):
+            self._profiles_task = run_async(
+                self.backend.simulation_profiles, self._profiles_loaded, self._failed
             )
-        adjacency = self.topology.adjacency
-        for left in range(min(len(adjacency), subnet_count)):
-            for right in range(left + 1, min(len(adjacency[left]), subnet_count)):
-                if adjacency[left][right]:
-                    painter.setPen(QPen(QColor("#294147"), 1))
-                    painter.drawLine(
-                        points[left][0] + 105,
-                        points[left][1] + 24,
-                        points[right][0],
-                        points[right][1] + 24,
-                    )
-        jewels = self.topology.crown_jewels()
-        for index, (x, y) in enumerate(points):
-            targeted = any(host[0] == index for host in jewels)
-            painter.setPen(QPen(QColor(COLORS["red"] if targeted else COLORS["cyan"]), 1))
-            painter.setBrush(QColor("#0d1d21"))
-            painter.drawRoundedRect(QRectF(x, y, 112, 50), 5, 5)
-            painter.setPen(QColor("#e8f0f1"))
-            painter.drawText(x + 12, y + 20, f"Subnet {index}")
-            size = self.topology.subnets[index] if index < len(self.topology.subnets) else 0
-            painter.setPen(QColor("#698087"))
-            painter.drawText(x + 12, y + 37, f"{size} hosts" + (" · target" if targeted else ""))
+        else:
+            self.banner.update_state(
+                "UNAVAILABLE", "This backend does not provide simulation profiles.", "warn"
+            )
+
+    def _profiles_loaded(self, profiles: list[dict]) -> None:
+        self.profile.clear()
+        for item in profiles:
+            self.profile.addItem(str(item["label"]), str(item["id"]))
+        self.run_button.setEnabled(bool(profiles))
+        self.banner.update_state(
+            "READY", f"{len(profiles)} backend-defined profiles · execution remains offline"
+        )
+
+    def run(self) -> None:
+        profile = self.profile.currentData()
+        if not profile:
+            self.notify("No simulation profile is available")
+            return
+        seed = self.seed.value()
+        self.run_button.setEnabled(False)
+        self.replay_button.setEnabled(False)
+        self.outcome.update_value("RUNNING", f"{profile} · seed {seed}")
+        self.banner.update_state("RUNNING", "Executing one backend simulation on a Qt worker…")
+        self._simulation_task = run_async(
+            lambda: self.backend.run_simulation(str(profile), seed), self._completed, self._failed
+        )
+
+    def _completed(self, result) -> None:
+        self.run_button.setEnabled(True)
+        self.replay_button.setEnabled(bool(result.trajectory))
+        outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
+        self.outcome.update_value(
+            outcome, f"{result.episode_steps} raw steps · {len(result.trajectory)} causal events"
+        )
+        self.entities.update_value(str(len(result.nodes)), result.profile.replace("_", " "))
+        self.relationships.update_value(str(len(result.edges)), result.topology_name)
+        self.coverage.update_value(
+            percent(result.discovery_coverage), "Policy-visible discovered entities"
+        )
+        self.banner.update_state(
+            "COMPLETE", f"hash {result.topology_hash} · {result.agent}"
+        )
+        self.graph.set_graph(result.nodes, result.edges, result.trajectory)
+        fill_table(
+            self.nodes,
+            [
+                (
+                    item["id"],
+                    item["type"].replace("_", " "),
+                    item["name"],
+                    json.dumps(item["attributes"], sort_keys=True),
+                )
+                for item in result.nodes
+            ],
+        )
+        self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
+
+    def graph_replay(self) -> None:
+        self.graph.replay()
+
+    def _failed(self, error: str, detail: str) -> None:
+        self.run_button.setEnabled(self.profile.count() > 0)
+        self.replay_button.setEnabled(False)
+        self.outcome.update_value("FAILED", error)
+        self.banner.update_state("FAILED", detail or error, "warn")
+        self.notify(f"Simulation failed: {error}")
 
 
 class TrajectoryGraph(QWidget):
-    """Replay a trace-derived attack path; no topology oracle is consulted."""
+    """Compact native replay of a stored trace-derived path."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -158,7 +375,7 @@ class TrajectoryGraph(QWidget):
         self.steps: list[dict] = []
         self.visible_steps = 0
         self.timer = QTimer(self)
-        self.timer.setInterval(450)
+        self.timer.setInterval(420)
         self.timer.timeout.connect(self._advance)
 
     def set_steps(self, steps: list[dict]) -> None:
@@ -181,146 +398,82 @@ class TrajectoryGraph(QWidget):
             self.timer.stop()
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#081316"))
+        painter.fillRect(self.rect(), QColor(theme.PANEL))
         visible = self.steps[: self.visible_steps]
         if not visible:
-            painter.setPen(QColor("#698087"))
+            painter.setPen(QColor(theme.TEXT_SECONDARY))
             painter.drawText(
                 self.rect(), Qt.AlignmentFlag.AlignCenter, "Select a stored attack path"
             )
             return
         columns = min(4, len(visible))
         rows = ceil(len(visible) / columns)
-        width = max(150, (self.width() - 60) // columns)
-        height = max(90, (self.height() - 40) // rows)
-        points = [
-            (25 + (index % columns) * width, 25 + (index // columns) * height)
-            for index in range(len(visible))
-        ]
+        cell_width = max(160, (self.width() - 70) // columns)
+        cell_height = max(86, (self.height() - 40) // rows)
+        points = []
+        for index in range(len(visible)):
+            row, offset = divmod(index, columns)
+            column = offset if row % 2 == 0 else columns - 1 - offset
+            points.append((25 + column * cell_width, 22 + row * cell_height))
         for index in range(1, len(points)):
-            painter.setPen(QPen(QColor(COLORS["amber"]), 2))
+            painter.setPen(QPen(QColor(theme.WARN), 2))
             painter.drawLine(
-                points[index - 1][0] + 120,
+                points[index - 1][0] + 132,
                 points[index - 1][1] + 28,
                 points[index][0],
                 points[index][1] + 28,
             )
         for index, (step, (x, y)) in enumerate(zip(visible, points, strict=True)):
             final = index == len(self.steps) - 1
-            painter.setPen(QPen(QColor(COLORS["red"] if final else COLORS["cyan"]), 2))
-            painter.setBrush(QColor("#0d1d21"))
-            painter.drawRoundedRect(QRectF(x, y, 122, 58), 5, 5)
-            painter.setPen(QColor("#e8f0f1"))
-            painter.drawText(x + 8, y + 20, str(step["target"])[:18])
-            painter.setPen(QColor("#698087"))
-            painter.drawText(x + 8, y + 41, str(step["action"])[:18])
-
-
-class Page(QWidget):
-    def __init__(self, eyebrow: str, title: str, action: str = "") -> None:
-        super().__init__()
-        self.root = QVBoxLayout(self)
-        self.root.setContentsMargins(0, 18, 0, 12)
-        head, titles = QHBoxLayout(), QVBoxLayout()
-        self.eyebrow = label(eyebrow, "Eyebrow")
-        titles.addWidget(self.eyebrow)
-        titles.addWidget(label(title, "PageTitle"))
-        head.addLayout(titles)
-        head.addStretch()
-        if action:
-            self.action = button(action, "Primary")
-            head.addWidget(self.action)
-        self.root.addLayout(head)
-
-
-class OverviewPage(Page):
-    def __init__(self, notify) -> None:
-        super().__init__("BACKEND SNAPSHOT", "Attack Path Discovery")
-        self.notify = notify
-        campaign = panel(QHBoxLayout())
-        self.run = label("Loading backend…", "SectionTitle")
-        self.run_detail = label("", "Muted")
-        campaign.layout().addWidget(self.run)
-        campaign.layout().addStretch()
-        campaign.layout().addWidget(self.run_detail)
-        self.progress = QProgressBar()
-        self.progress.setFixedWidth(220)
-        self.progress.setVisible(False)
-        campaign.layout().addWidget(self.progress)
-        self.root.addWidget(campaign)
-        metrics = QHBoxLayout()
-        self.success, self.steps, self.cvss, self.tactics = (
-            Metric("GOAL ACHIEVEMENT"),
-            Metric("MEAN STEPS TO GOAL"),
-            Metric("MEAN CVSS EXPLOITED"),
-            Metric("LATEST EPISODE MITRE TACTICS"),
-        )
-        for item in (self.success, self.steps, self.cvss, self.tactics):
-            metrics.addWidget(item)
-        self.root.addLayout(metrics)
-        center = QHBoxLayout()
-        graph_box = panel(QVBoxLayout())
-        graph_box.layout().addWidget(label("PERSISTED NETWORK TOPOLOGY", "SectionTitle"))
-        self.graph = AttackGraph()
-        graph_box.layout().addWidget(self.graph, 1)
-        center.addWidget(graph_box, 2)
-        path_box = panel(QVBoxLayout())
-        path_box.layout().addWidget(label("RECENT STORED ATTACK PATHS", "SectionTitle"))
-        self.path_table = QTableWidget(0, 2)
-        self.path_table.setHorizontalHeaderLabels(["Path", "Target"])
-        self.path_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        path_box.layout().addWidget(self.path_table)
-        center.addWidget(path_box, 1)
-        self.root.addLayout(center)
-
-    def apply(self, data: DashboardData) -> None:
-        self.eyebrow.setText(data.source_status.upper())
-        self.run.setText(data.run_name)
-        self.run_detail.setText(
-            f"{data.reward_mode} reward · seed {data.seed} · {data.episodes} episodes"
-        )
-        self.progress.setVisible(data.progress is not None)
-        if data.progress is not None:
-            self.progress.setValue(data.progress)
-        self.success.update_value(percent(data.success_rate), "Stored run summary")
-        self.steps.update_value(number(data.mean_steps), "Successful episodes")
-        self.cvss.update_value(number(data.mean_cvss), "Last 10% of training")
-        self.tactics.update_value(
-            str(data.tactic_count) if data.tactic_count else "—", "From persisted step rows"
-        )
-        self.graph.set_topology(data.topology)
-        fill_table(self.path_table, [(p["id"], p["target"]) for p in data.paths])
+            painter.setPen(QPen(QColor(theme.ERROR if final else theme.ARM_1), 2))
+            painter.setBrush(QColor(theme.SURFACE))
+            painter.drawRoundedRect(QRectF(x, y, 134, 58), 4, 4)
+            painter.setPen(QColor(theme.TEXT))
+            painter.drawText(x + 8, y + 20, str(step.get("target", "environment"))[:20])
+            painter.setPen(QColor(theme.TEXT_SECONDARY))
+            painter.drawText(x + 8, y + 41, str(step.get("action", "action"))[:20])
 
 
 class PathsPage(Page):
     def __init__(self, backend: BackendPort, notify) -> None:
         super().__init__(
-            "PERSISTED STEP EVIDENCE", "Prioritise exploitable routes", "Refresh paths"
+            "POSTGRESQL STEP EVIDENCE",
+            "Attack paths",
+            "Routes are reconstructed from successful state-changing events, "
+            "never hidden topology.",
         )
         self.backend, self.notify = backend, notify
-        self.action.clicked.connect(self.refresh)
-        self.metrics = Metric("DISCOVERED PATHS", "—", "Waiting for PostgreSQL")
-        self.root.addWidget(self.metrics)
-        replay_bar = QHBoxLayout()
-        replay_bar.addWidget(label("TRACE-DERIVED ATTACK GRAPH", "SectionTitle"))
-        replay_bar.addStretch()
+        toolbar = QHBoxLayout()
+        self.count = Metric("DISCOVERED PATHS", "—", "Waiting for PostgreSQL")
+        toolbar.addWidget(self.count)
+        toolbar.addStretch()
+        self.refresh_button = button("Refresh paths", "Primary")
+        self.refresh_button.clicked.connect(self.refresh)
         self.replay_button = button("Replay selected")
         self.replay_button.clicked.connect(self._replay)
-        replay_bar.addWidget(self.replay_button)
-        self.root.addLayout(replay_bar)
+        toolbar.addWidget(self.refresh_button)
+        toolbar.addWidget(self.replay_button)
+        self.root.addLayout(toolbar)
+
+        graph_panel = panel(QVBoxLayout())
+        graph_panel.layout().addWidget(label("TRACE-DERIVED CAUSAL ROUTE", "SectionTitle"))
         self.graph = TrajectoryGraph()
-        self.root.addWidget(self.graph)
+        graph_panel.layout().addWidget(self.graph)
+        self.root.addWidget(graph_panel)
+
+        table_panel = panel(QVBoxLayout())
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Path", "Target", "Risk", "Steps", "Detection", "Confidence"]
+            ["Path", "Target", "Risk", "Raw steps", "Detection", "Confidence"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        configure_table(self.table, stretch_column=1)
         self.table.cellClicked.connect(self._select_path)
-        self.root.addWidget(self.table)
+        table_panel.layout().addWidget(self.table)
+        self.root.addWidget(table_panel)
         self.paths: list[dict] = []
 
     def apply_paths(self, paths: list[dict]) -> None:
@@ -332,9 +485,8 @@ class PathsPage(Page):
                 for p in paths
             ],
         )
-        self.metrics.update_value(
-            str(len(paths)),
-            "No synthetic fallback" if not paths else "Loaded from PostgreSQL steps",
+        self.count.update_value(
+            str(len(paths)), "Loaded from PostgreSQL" if paths else "No replayable step rows"
         )
         self.graph.set_steps(paths[0].get("trajectory", []) if paths else [])
         if paths:
@@ -349,323 +501,229 @@ class PathsPage(Page):
         self.graph.replay()
 
     def refresh(self) -> None:
-        self._task = run_async(
-            self.backend.refresh_paths,
-            self._refreshed,
-            lambda error, _detail: self.notify(f"Path refresh failed: {error}"),
-        )
+        self.refresh_button.setEnabled(False)
+        self._task = run_async(self.backend.refresh_paths, self._refreshed, self._failed)
 
     def _refreshed(self, paths) -> None:
+        self.refresh_button.setEnabled(True)
         self.apply_paths(paths)
         self.notify(f"Loaded {len(paths)} stored attack path(s)")
 
-
-class SimulationPage(Page):
-    """Run and replay a backend-generated, simulation-only enterprise graph."""
-
-    def __init__(self, backend: BackendPort, notify) -> None:
-        super().__init__("OFFLINE TYPED-GRAPH BACKEND", "Enterprise Simulation")
-        self.backend, self.notify = backend, notify
-        controls = panel(QHBoxLayout())
-        controls.layout().addWidget(label("Environment profile", "Muted"))
-        self.profile = QComboBox()
-        self.profile.setMinimumWidth(190)
-        controls.layout().addWidget(self.profile)
-        controls.layout().addWidget(label("Topology seed", "Muted"))
-        self.seed = QSpinBox()
-        self.seed.setRange(0, 2_147_483_647)
-        self.seed.setValue(2001)
-        controls.layout().addWidget(self.seed)
-        controls.layout().addStretch()
-        self.run_button = button("Run offline simulation", "Primary")
-        self.run_button.setEnabled(False)
-        self.run_button.clicked.connect(self.run)
-        controls.layout().addWidget(self.run_button)
-        self.replay_button = button("Replay causal path")
-        self.replay_button.setEnabled(False)
-        self.replay_button.clicked.connect(self.graph_replay)
-        controls.layout().addWidget(self.replay_button)
-        self.root.addWidget(controls)
-
-        self.summary = label(
-            "Loading backend profiles… · no live discovery or network traffic",
-            "Muted",
-        )
-        self.root.addWidget(self.summary)
-        self.metrics = Metric("SIMULATION STATUS", "READY", "Backend not yet executed")
-        self.root.addWidget(self.metrics)
-        self.graph = TrajectoryGraph()
-        self.root.addWidget(self.graph)
-        self.nodes = QTableWidget(0, 4)
-        self.nodes.setHorizontalHeaderLabels(["Entity", "Type", "Name", "Attributes"])
-        self.nodes.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.root.addWidget(self.nodes)
-
-        if hasattr(self.backend, "simulation_profiles"):
-            self._profiles_task = run_async(
-                self.backend.simulation_profiles,
-                self._profiles_loaded,
-                self._failed,
-            )
-        else:
-            self.summary.setText("Simulation service is not available from this backend")
-
-    def _profiles_loaded(self, profiles: list[dict]) -> None:
-        self.profile.clear()
-        for item in profiles:
-            self.profile.addItem(str(item["label"]), str(item["id"]))
-        self.run_button.setEnabled(bool(profiles))
-        self.summary.setText(
-            f"{len(profiles)} configured simulation profiles · no live network discovery"
-        )
-
-    def run(self) -> None:
-        profile = self.profile.currentData()
-        if not profile:
-            self.notify("No simulation profile is available")
-            return
-        seed = self.seed.value()
-        self.run_button.setEnabled(False)
-        self.metrics.update_value("RUNNING", f"{profile} · seed {seed}")
-        self._simulation_task = run_async(
-            lambda: self.backend.run_simulation(str(profile), seed),
-            self._completed,
-            self._failed,
-        )
-
-    def _completed(self, result) -> None:
-        self.run_button.setEnabled(True)
-        self.replay_button.setEnabled(bool(result.trajectory))
-        outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
-        self.metrics.update_value(
-            outcome,
-            f"{result.episode_steps} raw steps · {len(result.trajectory)} causal events",
-        )
-        self.summary.setText(
-            f"{result.topology_name} · {len(result.nodes)} entities · "
-            f"{len(result.edges)} relationships · "
-            f"coverage {100 * result.discovery_coverage:.1f}% · "
-            f"hash {result.topology_hash[:12]}… · {result.agent}"
-        )
-        self.graph.set_steps(result.trajectory)
-        fill_table(
-            self.nodes,
-            [
-                (
-                    item["id"],
-                    item["type"],
-                    item["name"],
-                    json.dumps(item["attributes"], sort_keys=True),
-                )
-                for item in result.nodes
-            ],
-        )
-        self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
-
-    def graph_replay(self) -> None:
-        self.graph.replay()
-
     def _failed(self, error: str, detail: str) -> None:
-        del detail
-        self.run_button.setEnabled(self.profile.count() > 0)
-        self.replay_button.setEnabled(False)
-        self.metrics.update_value("FAILED", error)
-        self.notify(f"Simulation failed: {error}")
+        self.refresh_button.setEnabled(True)
+        self.notify(f"Path refresh failed: {error} · {detail}")
 
 
-class CampaignsPage(Page):
+class ResearchPage(Page):
     def __init__(self) -> None:
-        super().__init__("STORED RUN ARTEFACTS", "Training campaign history")
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(
-            ["Run", "Reward", "Status", "Episodes", "Progress", "Seed", "Success"]
+        super().__init__(
+            "CANONICAL LOCAL EVIDENCE",
+            "Research studies",
+            "Browse the frozen Phase 7–13 outcomes. Generated results stay local and ignored.",
         )
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.root.addWidget(self.table)
+        selector = panel(QHBoxLayout())
+        selector.layout().addWidget(label("Study", "FieldLabel"))
+        self.selector = QComboBox()
+        self.selector.setMinimumWidth(380)
+        self.selector.currentIndexChanged.connect(self._selected)
+        selector.layout().addWidget(self.selector)
+        selector.layout().addStretch()
+        self.status = label("No canonical results loaded", "StateLabel")
+        selector.layout().addWidget(self.status)
+        self.root.addWidget(selector)
+        self.banner = StateBanner()
+        self.root.addWidget(self.banner)
 
-    def apply(self, data: DashboardData) -> None:
-        self.eyebrow.setText(f"{len(data.campaigns)} STORED RUNS")
-        fill_table(
-            self.table,
-            [
-                (
-                    c.name,
-                    c.reward_mode,
-                    c.status,
-                    c.episodes,
-                    "—" if c.progress is None else f"{c.progress}%",
-                    c.seed,
-                    percent(c.success_rate),
-                )
-                for c in data.campaigns
-            ],
-        )
+        metric_row = QHBoxLayout()
+        self.seed_count = Metric("MATCHED SEEDS")
+        self.episode_count = Metric("EVALUATION EPISODES")
+        self.signal_count = Metric("PRIMARY SIGNALS")
+        self.commit = Metric("CODE COMMIT")
+        for item in (self.seed_count, self.episode_count, self.signal_count, self.commit):
+            metric_row.addWidget(item)
+        self.root.addLayout(metric_row)
 
-
-class AgentLabPage(Page):
-    def __init__(self) -> None:
-        super().__init__("READ-ONLY RUN CONFIGURATION", "Agent Lab")
-        body = QHBoxLayout()
-        details = panel(QFormLayout())
-        self.fields = {
-            name: label("Loading…", "Muted")
-            for name in (
-                "Algorithm",
-                "Environment",
-                "Learning rate",
-                "Discount factor",
-                "Batch size",
-            )
-        }
-        for name, item in self.fields.items():
-            details.layout().addRow(name, item)
-        body.addWidget(details, 2)
-        self.spec = QPlainTextEdit()
-        self.spec.setReadOnly(True)
-        body.addWidget(self.spec, 3)
-        self.root.addLayout(body)
-        self.root.addWidget(
-            label(
-                "Configuration is loaded from the run snapshot. "
-                "Editing requires a backend configuration service.",
-                "Muted",
-            )
-        )
-
-    def apply(self, data: DashboardData) -> None:
-        agent = data.agent
-        values = (
-            agent.algorithm,
-            agent.environment,
-            agent.learning_rate,
-            agent.gamma,
-            agent.batch_size,
-        )
-        for item, value in zip(self.fields.values(), values, strict=True):
-            item.setText("—" if value is None else str(value))
-        self.spec.setPlainText(agent.specification)
-
-
-class ExperimentsPage(Page):
-    def __init__(self) -> None:
-        super().__init__("ANALYSIS ARTEFACT", "Controlled experiment matrix")
+        panel_widget = panel(QVBoxLayout())
         self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
-                "Run",
-                "Reward",
-                "Seed",
-                "Episodes",
-                "Success",
-                "Native return",
-                "Steps to goal",
-                "Converged",
+                "Metric",
+                "Family",
+                "Reference",
+                "Candidate",
+                "Difference",
+                "Adjusted p",
+                "Effect size",
+                "Verdict",
             ]
         )
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.root.addWidget(self.table)
+        configure_table(self.table, stretch_column=0)
+        panel_widget.layout().addWidget(self.table)
+        self.root.addWidget(panel_widget)
+        self.provenance = label("", "MonoDetail", wrap=True)
+        self.root.addWidget(self.provenance)
+        self.studies: list[StudySummary] = []
 
     def apply(self, data: DashboardData) -> None:
-        self.eyebrow.setText(f"{len(data.experiments)} ANALYSED RUNS")
+        self.studies = list(data.studies)
+        self.selector.blockSignals(True)
+        self.selector.clear()
+        for study in self.studies:
+            self.selector.addItem(f"Phase {study.phase} · {study.title}", study.phase)
+        self.selector.blockSignals(False)
+        self._selected(0)
+
+    def _selected(self, index: int) -> None:
+        if not 0 <= index < len(self.studies):
+            self.status.setText("NO EVIDENCE")
+            self.banner.update_state("EMPTY", "No canonical result package is mounted.", "warn")
+            fill_table(self.table, [])
+            return
+        study = self.studies[index]
+        self.status.setText("COMPLETE" if study.complete else "PARTIAL")
+        self.banner.update_state(
+            "COMPLETE" if study.complete else "INCOMPLETE",
+            f"{study.arm_a.replace('_', ' ')} versus {study.arm_b.replace('_', ' ')} · "
+            f"{study.outcome}",
+            "ok" if study.complete else "warn",
+        )
+        self.seed_count.update_value(str(study.training_seeds), "Primary paired unit")
+        self.episode_count.update_value(f"{study.evaluation_episodes:,}", "Frozen-policy episodes")
+        signals = sum(metric.significant for metric in study.primary_metrics)
+        self.signal_count.update_value(
+            str(signals), f"of {len(study.primary_metrics)} primary metrics"
+        )
+        self.commit.update_value(study.code_commit[:8] or "—", "Recorded producer")
         fill_table(
             self.table,
             [
                 (
-                    r.get("run_name", "—"),
-                    r.get("reward_mode", "—"),
-                    r.get("seed", "—"),
-                    r.get("episodes", "—"),
-                    percent(r.get("success_rate")),
-                    number(r.get("native_return")),
-                    number(r.get("steps_to_goal")),
-                    str(r.get("converged", "—")),
+                    metric_name(metric.name),
+                    "PRIMARY" if metric.primary else "DESCRIPTIVE",
+                    number(metric.arm_a_mean, 3),
+                    number(metric.arm_b_mean, 3),
+                    number(metric.difference, 3),
+                    number(metric.p_adjusted, 4),
+                    number(metric.effect_size, 3),
+                    "SIGNIFICANT" if metric.significant else "NO SIGNAL",
                 )
-                for r in data.experiments
+                for metric in sorted(study.metrics, key=lambda item: not item.primary)
             ],
         )
-
-
-class DatasetsPage(Page):
-    def __init__(self) -> None:
-        super().__init__("BACKEND DATA SOURCES", "Research data catalogue")
-        self.grid = QGridLayout()
-        self.root.addLayout(self.grid)
-
-    def apply(self, data: DashboardData) -> None:
-        while self.grid.count():
-            widget = self.grid.takeAt(0).widget()
-            if widget:
-                widget.deleteLater()
-        for index, source in enumerate(data.datasets):
-            box = panel(QVBoxLayout())
-            box.layout().addWidget(label(source.integrity, "Eyebrow"))
-            box.layout().addWidget(label(source.title, "SectionTitle"))
-            box.layout().addWidget(label(source.count, "MetricValue"))
-            box.layout().addWidget(label(source.detail, "Muted"))
-            self.grid.addWidget(box, index // 2, index % 2)
-
-
-class LogsPage(Page):
-    def __init__(self) -> None:
-        super().__init__("PERSISTED EVENTS", "Event logs")
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Filter stored events…")
-        self.root.addWidget(self.search)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Sequence", "Level", "Source", "Message", "Context"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.root.addWidget(self.table)
-        self.search.textChanged.connect(self.filter)
-
-    def apply(self, data: DashboardData) -> None:
-        fill_table(
-            self.table, [(e.sequence, e.level, e.source, e.message, e.context) for e in data.events]
+        self.provenance.setText(
+            f"CONFIG  {study.config_hash or 'unavailable'}\nRESULT  {study.result_path}"
         )
-        self.eyebrow.setText(f"{len(data.events)} PERSISTED EVENTS")
+
+
+class RunsPage(Page):
+    def __init__(self) -> None:
+        super().__init__(
+            "DEDUPLICATED BACKEND RECORDS",
+            "Runs",
+            "PostgreSQL is authoritative; artifact-only runs are appended without duplicates.",
+        )
+        toolbar = QHBoxLayout()
+        self.count = Metric("STORED RUNS")
+        toolbar.addWidget(self.count)
+        toolbar.addStretch()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Filter by run, reward or seed…")
+        self.search.setMinimumWidth(300)
+        self.search.textChanged.connect(self.filter)
+        toolbar.addWidget(self.search)
+        self.root.addLayout(toolbar)
+        panel_widget = panel(QVBoxLayout())
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(
+            ["Run", "Reward / condition", "Status", "Episodes", "Progress", "Seed", "Success"]
+        )
+        configure_table(self.table, stretch_column=0)
+        panel_widget.layout().addWidget(self.table)
+        self.root.addWidget(panel_widget)
+
+    def apply(self, data: DashboardData) -> None:
+        self.count.update_value(str(len(data.campaigns)), "Current backend snapshot")
+        fill_table(
+            self.table,
+            [
+                (
+                    campaign.name,
+                    campaign.reward_mode,
+                    campaign.status,
+                    f"{campaign.episodes:,}",
+                    "—" if campaign.progress is None else f"{campaign.progress}%",
+                    campaign.seed,
+                    percent(campaign.success_rate),
+                )
+                for campaign in data.campaigns
+            ],
+        )
+        self.filter(self.search.text())
 
     def filter(self, text: str) -> None:
+        query = text.casefold().strip()
         for row in range(self.table.rowCount()):
             values = " ".join(
-                (self.table.item(row, col).text() if self.table.item(row, col) else "")
-                for col in range(self.table.columnCount())
+                self.table.item(row, column).text()
+                for column in range(self.table.columnCount())
+                if self.table.item(row, column) is not None
             )
-            self.table.setRowHidden(row, text.lower() not in values.lower())
+            self.table.setRowHidden(row, bool(query) and query not in values.casefold())
 
 
-class SettingsPage(Page):
+class SystemPage(Page):
     def __init__(self) -> None:
-        super().__init__("READ-ONLY BACKEND STATUS", "Platform configuration")
-        box = panel(QFormLayout())
-        self.database = label("Loading…", "Muted")
-        self.mode = label("Loading…", "Muted")
-        self.boundary = label("Offline typed graph / NASim only", "Muted")
-        box.layout().addRow("PostgreSQL", self.database)
-        box.layout().addRow("Data mode", self.mode)
-        box.layout().addRow("Execution boundary", self.boundary)
-        self.root.addWidget(box)
-        self.root.addWidget(
+        super().__init__(
+            "RUNTIME AND TRUST BOUNDARIES",
+            "System",
+            "Read-only operational state. Secrets and checkpoint contents are never displayed.",
+        )
+        self.banner = StateBanner()
+        self.root.addWidget(self.banner)
+        self.grid = QGridLayout()
+        self.root.addLayout(self.grid)
+        boundary = panel(QVBoxLayout())
+        boundary.layout().addWidget(label("EXECUTION BOUNDARY", "SectionTitle"))
+        boundary.layout().addWidget(
             label(
-                "Secrets are read from container environment variables and are never displayed.",
+                "Offline typed graph and NASim simulation only. Training and GUI run in "
+                "separate Podman images. Model weights remain under ignored runs/ paths.",
                 "Muted",
+                wrap=True,
             )
         )
+        self.database = label("PostgreSQL: loading", "MonoDetail", wrap=True)
+        boundary.layout().addWidget(self.database)
+        self.root.addWidget(boundary)
+        self.root.addStretch(1)
 
     def apply(self, data: DashboardData) -> None:
-        self.database.setText(data.database_label)
-        self.mode.setText(data.source_status)
+        kind = "warn" if data.source_status.startswith("Artefact mode") else "ok"
+        self.banner.update_state(
+            "DEGRADED" if kind == "warn" else "HEALTHY", data.source_status, kind
+        )
+        self.database.setText(f"DATABASE  {data.database_label}\nMODE      {data.source_status}")
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for index, source in enumerate(data.datasets):
+            card = panel(QVBoxLayout(), "DatasetCard")
+            card.layout().addWidget(label(source.integrity, "Eyebrow"))
+            card.layout().addWidget(label(source.title, "SectionTitle"))
+            card.layout().addWidget(label(source.count, "DatasetValue"))
+            card.layout().addWidget(label(source.detail, "Muted", wrap=True))
+            self.grid.addWidget(card, index // 2, index % 2)
 
 
 class MainWindow(QMainWindow):
     PAGE_DATA = [
-        ("Overview", "Attack Path Discovery"),
-        ("Simulation", "Enterprise Simulation"),
-        ("Attack Paths", "Attack Paths"),
-        ("Live Campaigns", "Campaign History"),
-        ("Agent Lab", "Agent Lab"),
-        ("Experiments", "Experiments"),
-        ("Datasets", "Datasets"),
-        ("Event Logs", "Event Logs"),
-        ("Configuration", "Configuration"),
+        ("Overview", "Mission control"),
+        ("Simulator", "Enterprise simulator"),
+        ("Attack Paths", "Attack paths"),
+        ("Research", "Research studies"),
+        ("Runs", "Stored runs"),
+        ("System", "System status"),
     ]
 
     def __init__(self, backend: BackendPort | None = None) -> None:
@@ -679,49 +737,54 @@ class MainWindow(QMainWindow):
         shell = QHBoxLayout(root)
         shell.setContentsMargins(0, 0, 0, 0)
         shell.setSpacing(0)
+
         sidebar = QFrame(objectName="Sidebar")
-        sidebar.setFixedWidth(230)
+        sidebar.setFixedWidth(218)
         nav = QVBoxLayout(sidebar)
-        nav.setContentsMargins(15, 24, 15, 18)
-        nav.addWidget(label("⬡  RLREDTEAM", "Brand"))
-        nav.addWidget(label("RESEARCH CONSOLE", "BrandSub"))
-        nav.addSpacing(18)
-        self.nav_buttons = []
+        nav.setContentsMargins(16, 24, 16, 18)
+        nav.setSpacing(4)
+        nav.addWidget(label("RLREDTEAM", "Brand"))
+        nav.addWidget(label("RESEARCH INSTRUMENT", "BrandSub"))
+        nav.addSpacing(22)
+        self.nav_buttons: list[QPushButton] = []
         for index, (name, _) in enumerate(self.PAGE_DATA):
             item = button(name, "Nav")
             item.setCheckable(True)
-            item.clicked.connect(lambda checked=False, i=index: self.select_page(i))
+            item.clicked.connect(lambda checked=False, page=index: self.select_page(page))
             self.nav_buttons.append(item)
             nav.addWidget(item)
         nav.addStretch()
-        safety = panel(QVBoxLayout())
-        safety.layout().addWidget(label("✓  SIMULATION BOUNDARY", "Eyebrow"))
-        safety.layout().addWidget(label("Offline graph / NASim only", "Muted"))
+        safety = panel(QVBoxLayout(), "BoundaryPanel")
+        safety.layout().addWidget(label("SIMULATION BOUNDARY", "Eyebrow"))
+        safety.layout().addWidget(label("Offline · no live exploitation", "Muted", wrap=True))
         nav.addWidget(safety)
         shell.addWidget(sidebar)
+
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(24, 0, 24, 0)
+        content_layout.setSpacing(0)
         top = QHBoxLayout()
-        top.setContentsMargins(0, 18, 0, 14)
-        self.header = label("Attack Path Discovery", "PageTitle")
+        top.setContentsMargins(0, 16, 0, 12)
+        self.header = label("Mission control", "PageTitle")
         top.addWidget(self.header)
         top.addStretch()
-        export = button("Open analysis report", "Primary")
-        export.clicked.connect(self.export_report)
-        top.addWidget(export)
+        self.refresh_button = button("Refresh backend")
+        self.refresh_button.clicked.connect(self.refresh)
+        top.addWidget(self.refresh_button)
+        self.report_button = button("Locate latest statistics", "Primary")
+        self.report_button.clicked.connect(self.export_report)
+        top.addWidget(self.report_button)
         content_layout.addLayout(top)
+
         self.stack = QStackedWidget()
         self.pages = [
-            OverviewPage(self.notify),
+            OverviewPage(),
             SimulationPage(self.backend, self.notify),
             PathsPage(self.backend, self.notify),
-            CampaignsPage(),
-            AgentLabPage(),
-            ExperimentsPage(),
-            DatasetsPage(),
-            LogsPage(),
-            SettingsPage(),
+            ResearchPage(),
+            RunsPage(),
+            SystemPage(),
         ]
         for page in self.pages:
             scroll = QScrollArea()
@@ -733,14 +796,16 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Loading backend snapshot…")
         self.select_page(0)
-        if hasattr(self.backend, "load_dashboard"):
-            self._load_task = run_async(
-                self.backend.load_dashboard,
-                self.apply_dashboard,
-                lambda error, _detail: self.statusBar().showMessage(
-                    f"Backend unavailable: {error}"
-                ),
-            )
+        self.refresh()
+
+    def refresh(self) -> None:
+        if not hasattr(self.backend, "load_dashboard"):
+            return
+        self.refresh_button.setEnabled(False)
+        self.statusBar().showMessage("Refreshing backend snapshot…")
+        self._load_task = run_async(
+            self.backend.load_dashboard, self.apply_dashboard, self._dashboard_failed
+        )
 
     def apply_dashboard(self, data: DashboardData) -> None:
         for page in self.pages:
@@ -748,20 +813,29 @@ class MainWindow(QMainWindow):
             if apply:
                 apply(data)
         self.pages[2].apply_paths(data.paths)
+        self.refresh_button.setEnabled(True)
         self.statusBar().showMessage(data.source_status)
+
+    def _dashboard_failed(self, error: str, detail: str) -> None:
+        self.refresh_button.setEnabled(True)
+        self.statusBar().showMessage(f"Backend unavailable: {error} · {detail}")
 
     def select_page(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
         self.header.setText(self.PAGE_DATA[index][1])
+        scroll = self.stack.currentWidget()
+        if isinstance(scroll, QScrollArea):
+            scroll.verticalScrollBar().setValue(0)
+            scroll.horizontalScrollBar().setValue(0)
         for item_index, item in enumerate(self.nav_buttons):
             item.setChecked(item_index == index)
 
     def notify(self, message: str) -> None:
-        self.statusBar().showMessage(message, 4000)
+        self.statusBar().showMessage(message, 5000)
 
     def export_report(self) -> None:
         self._export_task = run_async(
             self.backend.export_report,
-            lambda path: self.notify(f"Analysis report: {path}"),
-            lambda error, _detail: self.notify(f"Report unavailable: {error}"),
+            lambda path: self.notify(f"Latest statistics: {path}"),
+            lambda error, _detail: self.notify(f"Statistics unavailable: {error}"),
         )

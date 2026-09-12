@@ -7,9 +7,10 @@ import pytest
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication, QGraphicsSimpleTextItem, QLabel  # noqa: E402
 
 from gui.backend import CampaignData, DashboardData, SimulationData  # noqa: E402
+from gui.data.models import StudyMetric, StudySummary  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
 from gui.views.research_console import SimulationPage, TrajectoryGraph  # noqa: E402
 
@@ -43,11 +44,30 @@ def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationDa
         topology_seed=seed,
         topology_hash="a" * 64,
         topology_name=f"enterprise-{profile}-seed-{seed}",
-        nodes=[{"id": "asset", "type": "asset", "name": "Data", "attributes": {}}],
-        edges=[],
+        nodes=[
+            {"id": "entry", "type": "entry_point", "name": "External", "attributes": {}},
+            {"id": "host", "type": "host", "name": "Host", "attributes": {}},
+            {"id": "asset", "type": "asset", "name": "Data", "attributes": {}},
+        ],
+        edges=[
+            {"source": "entry", "target": "host", "type": "connects"},
+            {"source": "host", "target": "asset", "type": "contains"},
+        ],
         trajectory=[
             {
+                "step": 0,
+                "action": "discover:entry",
+                "action_kind": "discover_network",
+                "target": "entry",
+            },
+            {
                 "step": 1,
+                "action": "pivot:host",
+                "action_kind": "pivot",
+                "target": "host",
+            },
+            {
+                "step": 2,
                 "action": "access_asset:asset",
                 "action_kind": "access_asset",
                 "target": "asset",
@@ -60,12 +80,12 @@ def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationDa
     )
 
 
-def test_all_nine_desktop_workspaces_navigate() -> None:
+def test_all_six_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 9
-    assert len(window.nav_buttons) == 9
+    assert window.stack.count() == 6
+    assert len(window.nav_buttons) == 6
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()
@@ -73,8 +93,8 @@ def test_all_nine_desktop_workspaces_navigate() -> None:
         assert nav_button.isChecked()
 
     labels = [item.text() for item in window.findChildren(QLabel)]
-    assert "✓  SIMULATION BOUNDARY" in labels
-    assert "Offline graph / NASim only" in labels
+    assert "SIMULATION BOUNDARY" in labels
+    assert "Offline · no live exploitation" in labels
     window.close()
 
 
@@ -86,12 +106,28 @@ def test_simulation_page_renders_backend_result_without_hardcoded_profile() -> N
     app.processEvents()
 
     assert page.profile.currentData() == "hybrid"
-    assert page.nodes.rowCount() == 1
-    assert page.graph.steps[-1]["target"] == "asset"
-    assert page.metrics.value.text() == "GOAL REACHED"
+    assert page.nodes.rowCount() == 3
+    assert page.graph.node_count == 3
+    assert page.graph.edge_count == 2
+    assert page.graph.highlighted_entities == {"entry", "host", "asset"}
+    assert page.graph.final_entity == "asset"
+    entry_labels = [
+        item
+        for item in page.graph.graph_scene.items()
+        if isinstance(item, QGraphicsSimpleTextItem) and item.text() == "entry"
+    ]
+    assert len(entry_labels) == 1
+    assert entry_labels[0].scenePos().x() >= 28
+    assert entry_labels[0].scenePos().y() >= 64
+    assert page.outcome.value.text() == "GOAL REACHED"
     assert page.replay_button.isEnabled()
     page.replay_button.click()
-    assert page.graph.visible_steps == 1
+    assert page.graph.replay_index == 1
+    assert page.graph.highlighted_entities == {"entry"}
+    page.graph._advance_replay()
+    page.graph._advance_replay()
+    assert page.graph.highlighted_entities == {"entry", "host", "asset"}
+    assert not page.graph.replay_timer.isActive()
     page.close()
 
 
@@ -112,11 +148,48 @@ def test_dashboard_values_are_rendered_from_backend_snapshot() -> None:
 
     window.apply_dashboard(data)
     app.processEvents()
-    labels = [item.text() for item in window.findChildren(QLabel)]
 
-    assert "stored-run-123" in labels
-    assert "25.0%" in labels
-    assert "EXP-09 · PPO / Large topology" not in labels
+    runs_page = window.pages[4]
+    assert runs_page.table.item(0, 0).text() == "stored-run-123"
+    assert runs_page.table.item(0, 6).text() == "25.0%"
+    window.close()
+
+
+def test_latest_study_drives_overview_and_research_pages() -> None:
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(backend=FakeBackend())
+    study = StudySummary(
+        phase=13,
+        study_id="multiagent",
+        title="Multi-agent red/blue defence",
+        arm_a="static",
+        arm_b="adaptive",
+        complete=True,
+        outcome="No significant primary effect",
+        code_commit="1234567890",
+        config_hash="abc",
+        result_path="results/multiagent/test",
+        training_seeds=10,
+        evaluation_episodes=1200,
+        metrics=[
+            StudyMetric(
+                "detection_rate", 0.2, 0.24, 0.04, 0.2, 0.6, 0.3, False, True
+            )
+        ],
+    )
+
+    window.apply_dashboard(
+        DashboardData(source_status="PostgreSQL connected", studies=[study])
+    )
+    app.processEvents()
+
+    overview = window.pages[0]
+    research = window.pages[3]
+    assert overview.study_name.text() == "Multi-agent red/blue defence"
+    assert overview.episodes.value.text() == "1,200"
+    assert overview.metric_table.item(0, 0).text() == "Detection Rate"
+    assert research.selector.itemText(0).startswith("Phase 13")
+    assert research.table.item(0, 1).text() == "PRIMARY"
     window.close()
 
 

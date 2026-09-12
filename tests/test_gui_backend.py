@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from gui.backend import ApplicationBackend
+from gui.data.repository import RepositoryError
 
 
 class FakeRepository:
@@ -33,6 +34,13 @@ class FakeRepository:
                 cvss_base=10.0,
             )
         ]
+
+
+class FailingRepository:
+    settings = SimpleNamespace(label="offline@localhost:5433")
+
+    def list_runs(self):
+        raise RepositoryError("Cannot reach PostgreSQL", "connection refused")
 
 
 def test_backend_adapts_stored_steps_to_path_data() -> None:
@@ -74,10 +82,51 @@ def test_backend_rejects_configuration_without_a_real_service() -> None:
         backend.save_agent_config({"algorithm": "live-agent"})
 
 
-def test_backend_exports_existing_analysis_artifact() -> None:
+def test_backend_exports_latest_canonical_analysis_artifact(tmp_path, monkeypatch) -> None:
+    table = tmp_path / "tables" / "statistics.csv"
+    table.parent.mkdir()
+    table.write_text("metric,p_value\n")
+    monkeypatch.setattr(
+        "gui.backend.load_studies",
+        lambda: [SimpleNamespace(result_path=str(tmp_path))],
+    )
+
     path = ApplicationBackend(repository=FakeRepository()).export_report()
 
-    assert path.endswith("runs/_analysis/results_table.txt")
+    assert path == str(table)
+
+
+def test_database_campaigns_take_precedence_over_duplicate_artifacts() -> None:
+    database = SimpleNamespace(
+        name="same-run",
+        reward_mode="adaptive",
+        status="complete",
+        episode_count=60,
+        seed_label="601",
+        mean_native_reward=155.0,
+        success_rate=1.0,
+    )
+    artifact = SimpleNamespace(name="same-run")
+    artifact_only = SimpleNamespace(name="local-only")
+
+    campaigns = ApplicationBackend._merge_campaigns(
+        [database], [artifact, artifact_only]
+    )
+
+    assert [campaign.name for campaign in campaigns] == ["same-run", "local-only"]
+    assert campaigns[0].reward_mode == "adaptive"
+    assert campaigns[0].episodes == 60
+
+
+def test_dashboard_explicitly_reports_database_degradation(monkeypatch) -> None:
+    monkeypatch.setattr("gui.backend.list_run_folders", lambda: [])
+    monkeypatch.setattr("gui.backend.load_studies", lambda: [])
+
+    dashboard = ApplicationBackend(repository=FailingRepository()).load_dashboard()
+
+    assert dashboard.source_status == "Artefact mode · Cannot reach PostgreSQL"
+    assert dashboard.database_label == "offline@localhost:5433"
+    assert dashboard.campaigns == []
 
 
 def test_backend_profiles_come_from_enterprise_model() -> None:

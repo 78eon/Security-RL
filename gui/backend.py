@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from gui.data.models import TopologyView
+from gui.data.models import StudySummary, TopologyView
 from gui.data.repository import Repository, RepositoryError
 from gui.data.runs import (
     CATALOGUE_DB,
@@ -19,6 +19,7 @@ from gui.data.runs import (
     load_topology,
     read_episode_csv,
 )
+from gui.data.studies import load_studies
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -98,6 +99,7 @@ class DashboardData:
     agent: AgentData = field(default_factory=AgentData)
     topology: TopologyView = field(default_factory=TopologyView)
     database_label: str = "Not configured"
+    studies: list[StudySummary] = field(default_factory=list)
 
 
 class BackendPort(Protocol):
@@ -268,61 +270,99 @@ class ApplicationBackend:
     def load_dashboard(self) -> DashboardData:
         folders = [name for name in list_run_folders() if not name.startswith("_")]
         folders.sort(key=lambda name: (RUNS_DIR / name).stat().st_mtime, reverse=True)
-        campaigns = self._campaigns(folders)
-        latest = campaigns[0].name if campaigns else ""
-        summary, snapshot = load_summary(latest), load_snapshot(latest)
-        csv_rows = read_episode_csv(latest)
-        db_runs, db_episodes, db_steps, paths = [], [], [], []
+        artifact_campaigns = self._campaigns(folders)
+        db_runs, latest_episodes, db_steps, paths = [], [], [], []
         status = "PostgreSQL connected"
         try:
             db_runs = self.repository.list_runs()
             paths = self.refresh_paths()
             if db_runs:
-                db_episodes = self.repository.episodes(
-                    [run.experiment_id for run in db_runs]
-                )
+                latest_episodes = self.repository.episodes([db_runs[0].experiment_id])
                 replayable = self.repository.replayable_episodes(db_runs[0].experiment_id)
                 if replayable and replayable[-1].episode_id is not None:
                     db_steps = self.repository.steps(replayable[-1].episode_id)
         except (RepositoryError, AttributeError) as exc:
             status = f"Artefact mode · {getattr(exc, 'message', str(exc))}"
-        if not campaigns and db_runs:
-            campaigns = [
-                CampaignData(
-                    r.name,
-                    r.reward_mode,
-                    r.status,
-                    r.episode_count,
-                    None,
-                    r.seed_label,
-                    r.mean_native_reward,
-                    r.success_rate,
-                )
-                for r in db_runs
-            ]
-            latest = campaigns[0].name
+        campaigns = self._merge_campaigns(db_runs, artifact_campaigns)
+        latest = campaigns[0].name if campaigns else ""
+        summary, snapshot = load_summary(latest), load_snapshot(latest)
+        csv_rows = read_episode_csv(latest)
         campaign = campaigns[0] if campaigns else None
+        latest_db = db_runs[0] if db_runs else None
+        successful_lengths = [episode.length for episode in latest_episodes if episode.goal_reached]
+        observed_cvss = [
+            episode.mean_cvss_exploited
+            for episode in latest_episodes
+            if episode.mean_cvss_exploited is not None
+        ]
+        success_rate = _number(summary.get("success_rate_overall"))
+        if success_rate is None and latest_db is not None:
+            success_rate = latest_db.success_rate
+        mean_steps = _number(summary.get("mean_steps_to_goal"))
+        if mean_steps is None and successful_lengths:
+            mean_steps = sum(successful_lengths) / len(successful_lengths)
+        mean_cvss = _number(summary.get("mean_cvss_exploited_last_10pct"))
+        if mean_cvss is None and observed_cvss:
+            mean_cvss = sum(observed_cvss) / len(observed_cvss)
         tactics = {step.tactic for step in db_steps if step.tactic}
+        studies = load_studies()
+        if studies:
+            status = f"{status} · Phase {studies[0].phase} evidence loaded"
+        database_label = getattr(
+            getattr(self.repository, "settings", None), "label", "Configured backend"
+        )
         return DashboardData(
             source_status=status,
             run_name=latest or "No stored runs",
             reward_mode=str(snapshot.get("reward_mode", campaign.reward_mode if campaign else "—")),
             seed=str(snapshot.get("training_seed", campaign.seed if campaign else "—")),
-            episodes=int(summary.get("episodes", len(csv_rows))),
+            episodes=int(
+                summary.get(
+                    "episodes",
+                    latest_db.episode_count if latest_db is not None else len(csv_rows),
+                )
+            ),
             progress=campaign.progress if campaign else None,
-            success_rate=_number(summary.get("success_rate_overall")),
-            mean_steps=_number(summary.get("mean_steps_to_goal")),
-            mean_cvss=_number(summary.get("mean_cvss_exploited_last_10pct")),
+            success_rate=success_rate,
+            mean_steps=mean_steps,
+            mean_cvss=mean_cvss,
             tactic_count=len(tactics),
             campaigns=campaigns,
             paths=paths,
             events=self._events(db_steps, latest, csv_rows),
-            datasets=self._datasets(folders, db_runs, db_episodes),
-            experiments=self._experiments(),
+            datasets=self._datasets(
+                folders,
+                db_runs,
+                sum(int(run.episode_count) for run in db_runs),
+            ),
+            experiments=[],
             agent=self._agent(snapshot),
             topology=load_topology(latest) if latest else TopologyView(),
-            database_label=self.repository.settings.label,
+            database_label=database_label,
+            studies=studies,
         )
+
+    @staticmethod
+    def _merge_campaigns(db_runs, artifact_campaigns) -> list[CampaignData]:
+        """Prefer database truth and append artifact-only runs without duplicates."""
+        output = [
+            CampaignData(
+                run.name,
+                run.reward_mode,
+                run.status,
+                run.episode_count,
+                None,
+                run.seed_label,
+                run.mean_native_reward,
+                run.success_rate,
+            )
+            for run in db_runs
+        ]
+        names = {campaign.name for campaign in output}
+        output.extend(
+            campaign for campaign in artifact_campaigns if campaign.name not in names
+        )
+        return output
 
     @staticmethod
     def _campaigns(folders: list[str]) -> list[CampaignData]:
@@ -401,7 +441,7 @@ class ApplicationBackend:
         ]
 
     @staticmethod
-    def _datasets(folders, db_runs, db_episodes) -> list[DatasetData]:
+    def _datasets(folders, db_runs, db_episode_count: int) -> list[DatasetData]:
         cves = 0
         try:
             with sqlite3.connect(f"file:{CATALOGUE_DB}?mode=ro", uri=True) as conn:
@@ -420,22 +460,18 @@ class ApplicationBackend:
             ),
             DatasetData(
                 "PostgreSQL records",
-                f"{len(db_episodes):,} episodes",
+                f"{db_episode_count:,} episodes",
                 f"{len(db_runs):,} experiment records",
                 "CONNECTED" if db_runs else "EMPTY / OFFLINE",
             ),
         ]
 
-    @staticmethod
-    def _experiments() -> list[dict]:
-        try:
-            return list(
-                json.loads((RUNS_DIR / "_analysis" / "analysis.json").read_text()).get("runs", [])
-            )
-        except (OSError, json.JSONDecodeError):
-            return []
-
     def export_report(self) -> str:
+        studies = load_studies()
+        if studies:
+            report = Path(studies[0].result_path) / "tables" / "statistics.csv"
+            if report.is_file():
+                return str(report)
         report = REPO_ROOT / "runs" / "_analysis" / "results_table.txt"
         if not report.is_file():
             raise FileNotFoundError("no analysis report is available")

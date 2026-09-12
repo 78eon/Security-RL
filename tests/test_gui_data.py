@@ -245,3 +245,120 @@ def test_training_never_launches_on_host_networking() -> None:
     network = argv[argv.index("--network") + 1]
     assert network != "host", "training would have internet access"
     assert "internal" in network
+
+
+# -- canonical research studies --------------------------------------------
+
+
+def test_study_loader_uses_complete_metadata_and_primary_statistics(tmp_path) -> None:
+    from gui.data.studies import load_studies
+
+    result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test"
+    (result / "metadata").mkdir(parents=True)
+    (result / "summaries").mkdir()
+    raw = result / "raw" / "red-s601"
+    raw.mkdir(parents=True)
+    (result / "metadata" / "study.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "code_commit": "abc123",
+                "study_config_hash": "cfg123",
+                "frozen_inputs": {"source_sha256": "source123"},
+            }
+        )
+    )
+    (result / "summaries" / "analysis.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "arm_a": "static",
+                "arm_b": "adaptive",
+                "expected_training_seeds": [601, 602],
+                "primary_metrics": ["detection_rate"],
+                "comparisons": [
+                    {
+                        "metric": "detection_rate",
+                        "mean_a": 0.2,
+                        "mean_b": 0.3,
+                        "difference": 0.1,
+                        "p_value": 0.02,
+                        "p_bonferroni": 0.04,
+                        "cohens_d": 0.8,
+                        "significant": True,
+                    }
+                ],
+            }
+        )
+    )
+    (raw / "episodes.csv").write_text("episode,goal\n1,true\n2,false\n")
+
+    studies = load_studies(tmp_path)
+
+    assert len(studies) == 1
+    study = studies[0]
+    assert study.phase == 13
+    assert study.complete
+    assert study.training_seeds == 2
+    assert study.evaluation_episodes == 2
+    assert study.code_commit == "abc123"
+    assert study.primary_metrics[0].name == "detection_rate"
+    assert study.outcome == "Significant primary result: detection rate"
+
+
+def test_study_loader_does_not_treat_missing_analysis_as_complete(tmp_path) -> None:
+    from gui.data.studies import load_studies
+
+    result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test" / "metadata"
+    result.mkdir(parents=True)
+    (result / "study.json").write_text(json.dumps({"complete": True}))
+
+    studies = load_studies(tmp_path)
+
+    assert len(studies) == 1
+    assert not studies[0].complete
+    assert studies[0].outcome == "Incomplete evidence package"
+
+
+def test_study_loader_requires_raw_evaluation_evidence(tmp_path) -> None:
+    from gui.data.studies import load_studies
+
+    result = tmp_path / "advanced-rl-multiagent-defense-v1" / "test"
+    (result / "metadata").mkdir(parents=True)
+    (result / "summaries").mkdir()
+    (result / "metadata" / "study.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "code_commit": "abc123",
+                "study_config_hash": "cfg123",
+                "frozen_inputs": {"source_sha256": "source123"},
+            }
+        )
+    )
+    (result / "summaries" / "analysis.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "expected_training_seeds": [601],
+                "primary_metrics": ["success_rate"],
+                "comparisons": [{"metric": "success_rate", "mean_a": 1, "mean_b": 1}],
+            }
+        )
+    )
+
+    studies = load_studies(tmp_path)
+
+    assert len(studies) == 1
+    assert not studies[0].complete
+    assert studies[0].evaluation_episodes == 0
+
+
+def test_study_loader_counts_fixed_baseline_evaluation_csv(tmp_path) -> None:
+    from gui.data.studies import _episode_count
+
+    raw = tmp_path / "raw" / "sparse-s42"
+    raw.mkdir(parents=True)
+    (raw / "evaluation.csv").write_text("episode,goal\n1,true\n2,false\n")
+
+    assert _episode_count(tmp_path) == 2
