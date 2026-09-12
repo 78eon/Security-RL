@@ -254,6 +254,7 @@ multiagent-freeze: ## Freeze Phase 13 red-blue study source/config/defender hash
 		-v "$$PWD/configs:/app/configs:rw,z" \
 		-v "$$PWD/src:/app/src:ro,z" \
 		-v "$$PWD/scripts:/app/scripts:ro,z" \
+		-v "$$PWD/tests:/app/tests:ro,z" \
 		-v "$$PWD/runs:/app/runs:ro,z" \
 		-v "$$PWD/results:/app/results:ro,z" \
 		-v "$$PWD/docs:/app/docs:ro,z" \
