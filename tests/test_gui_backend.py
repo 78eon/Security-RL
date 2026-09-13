@@ -45,6 +45,9 @@ class FakeRepository:
             )
         ]
 
+    def attack_path_reports(self):
+        return [{"report_id": "stored-report"}]
+
 
 class FailingRepository:
     settings = SimpleNamespace(label="offline@localhost:5433")
@@ -86,6 +89,12 @@ def test_backend_adapts_stored_steps_to_path_data() -> None:
             ],
         }
     ]
+
+
+def test_backend_loads_persisted_reports_without_recomputing() -> None:
+    backend = ApplicationBackend(repository=FakeRepository())
+
+    assert backend.refresh_attack_path_reports() == [{"report_id": "stored-report"}]
 
 
 def test_backend_does_not_fake_unsupported_controls() -> None:

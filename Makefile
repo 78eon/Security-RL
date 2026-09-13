@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test phase14-report phase14-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -94,6 +94,14 @@ gui-test:       ## Headless tests for the desktop GUI and adapter
 	podman run --rm -e QT_QPA_PLATFORM=offscreen \
 		-v "$$PWD:/app:ro,z" -w /app rlredteam-gui \
 		python -m pytest tests/test_gui*.py -q -p no:cacheprovider
+
+phase14-report: ## Generate and persist deterministic explainable attack-path report
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/generate_attack_path_report.py --postgres
+
+phase14-verify: ## Test and reconstruct Phase 14 report from source + PostgreSQL
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/verify_phase14_completion.py --postgres
 
 lab-build:      ## Build the unprivileged isolated-range discovery image
 	podman build -t rlredteam-lab -f Dockerfile.lab .

@@ -12,8 +12,13 @@ from PySide6.QtWidgets import QApplication, QGraphicsSimpleTextItem, QLabel  # n
 from gui.backend import CampaignData, DashboardData, SimulationData  # noqa: E402
 from gui.data.models import StudyMetric, StudySummary  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
-from gui.views.research_console import SimulationPage, TrajectoryGraph  # noqa: E402
+from gui.views.research_console import (  # noqa: E402
+    AttackPathReportPage,
+    SimulationPage,
+    TrajectoryGraph,
+)
 from rlredteam.frameworks import event_framework_fields  # noqa: E402
+from tests.test_attack_path_report import make_report  # noqa: E402
 
 
 class FakeBackend:
@@ -112,12 +117,12 @@ def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationDa
     )
 
 
-def test_all_six_desktop_workspaces_navigate() -> None:
+def test_all_seven_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 6
-    assert len(window.nav_buttons) == 6
+    assert window.stack.count() == 7
+    assert len(window.nav_buttons) == 7
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()
@@ -186,7 +191,7 @@ def test_dashboard_values_are_rendered_from_backend_snapshot() -> None:
     window.apply_dashboard(data)
     app.processEvents()
 
-    runs_page = window.pages[4]
+    runs_page = window.pages[5]
     assert runs_page.table.item(0, 0).text() == "stored-run-123"
     assert runs_page.table.item(0, 6).text() == "25.0%"
     window.close()
@@ -221,13 +226,40 @@ def test_latest_study_drives_overview_and_research_pages() -> None:
     app.processEvents()
 
     overview = window.pages[0]
-    research = window.pages[3]
+    research = window.pages[4]
     assert overview.study_name.text() == "Multi-agent red/blue defence"
     assert overview.episodes.value.text() == "1,200"
     assert overview.metric_table.item(0, 0).text() == "Detection Rate"
     assert research.selector.itemText(0).startswith("Phase 13")
     assert research.table.item(0, 1).text() == "PRIMARY"
     window.close()
+
+
+def test_attack_path_report_page_renders_stored_derived_facts() -> None:
+    app = QApplication.instance() or QApplication([])
+    page = AttackPathReportPage()
+    report = make_report().to_dict()
+
+    page.apply(
+        DashboardData(
+            source_status="PostgreSQL connected",
+            attack_path_reports=[report],
+        )
+    )
+    app.processEvents()
+
+    assert page.mode.text() == "SIMULATION_REPORT"
+    assert page.trajectories.value.text() == "2"
+    assert page.techniques.value.text() == "4"
+    assert page.crown_reach.value.text() == "100.0%"
+    assert page.failed_actions.value.text() == "1"
+    assert page.navigator.attack.active_techniques == {"T1018", "T1046", "T1210", "T1005"}
+    assert page.navigator.atlas.active_techniques == set()
+    assert page.graph.node_count == len(report["observed_graph"]["nodes"])
+    assert page.criticality.rowCount() == 3
+    assert page.details.rowCount() == 5
+    assert report["provenance"]["facts_payload_sha256"] in page.provenance.text()
+    page.close()
 
 
 def test_trace_graph_replays_backend_steps_without_html() -> None:

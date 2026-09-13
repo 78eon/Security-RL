@@ -210,3 +210,10 @@ def load_mitre_catalogue(path: Path | None = None) -> dict[str, Any]:
         if unknown:
             raise ValueError(f"{field} references unknown techniques: {sorted(unknown)}")
     return raw
+
+
+def mitre_catalogue_digest(path: Path | None = None) -> str:
+    """SHA-256 of the validated MITRE catalogue's canonical payload."""
+    raw = load_mitre_catalogue(path)
+    canonical = json.dumps(raw, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()

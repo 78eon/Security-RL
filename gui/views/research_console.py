@@ -628,6 +628,245 @@ class PathsPage(Page):
         self.notify(f"Path refresh failed: {error} · {detail}")
 
 
+class AttackPathReportPage(Page):
+    """Render stored deterministic facts without consulting hidden topology."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "PHASE 14 · STORED DERIVED FACTS",
+            "Explainable attack-path analysis",
+            "MITRE mappings, observed targets and criticality come from persisted report facts. "
+            "Normal mode never reads hidden TrueTopology.",
+        )
+        selector = panel(QHBoxLayout())
+        selector.layout().addWidget(label("Report", "FieldLabel"))
+        self.selector = QComboBox()
+        self.selector.setMinimumWidth(430)
+        self.selector.currentIndexChanged.connect(self._selected)
+        selector.layout().addWidget(self.selector)
+        selector.layout().addStretch()
+        self.mode = label("NO STORED REPORT", "StateLabel")
+        selector.layout().addWidget(self.mode)
+        self.root.addWidget(selector)
+
+        metric_row = QHBoxLayout()
+        self.trajectories = Metric("TRAJECTORIES")
+        self.techniques = Metric("TECHNIQUES")
+        self.crown_reach = Metric("CROWN-JEWEL REACH")
+        self.failed_actions = Metric("FAILED ACTIONS")
+        for item in (
+            self.trajectories,
+            self.techniques,
+            self.crown_reach,
+            self.failed_actions,
+        ):
+            metric_row.addWidget(item)
+        self.root.addLayout(metric_row)
+
+        timeline_panel = panel(QVBoxLayout())
+        timeline_panel.layout().addWidget(
+            label("MITRE TACTIC / TECHNIQUE TIMELINE", "SectionTitle")
+        )
+        self.navigator = MitreNavigator()
+        self.navigator.setMinimumHeight(300)
+        timeline_panel.layout().addWidget(self.navigator)
+        self.root.addWidget(timeline_panel)
+
+        graph_panel = panel(QVBoxLayout())
+        graph_panel.layout().addWidget(label("OBSERVED AGENTKNOWLEDGE TARGETS", "SectionTitle"))
+        graph_panel.layout().addWidget(
+            label(
+                "Nodes are recorded targets only. Missing causal edges are left absent rather "
+                "than inferred from simulator ground truth.",
+                "Muted",
+                wrap=True,
+            )
+        )
+        self.graph = EnterpriseGraph()
+        graph_panel.layout().addWidget(self.graph)
+        self.root.addWidget(graph_panel)
+
+        critical_panel = panel(QVBoxLayout())
+        critical_panel.layout().addWidget(label("OBSERVED PATH-CRITICAL CVES", "SectionTitle"))
+        self.criticality = QTableWidget(0, 6)
+        self.criticality.setHorizontalHeaderLabels(
+            ["CVE", "Observed criticality", "Broken paths", "Containing paths", "CVSS", "MITRE"]
+        )
+        configure_table(self.criticality, stretch_column=0)
+        critical_panel.layout().addWidget(self.criticality)
+        self.root.addWidget(critical_panel)
+
+        detail_panel = panel(QVBoxLayout())
+        detail_head = QHBoxLayout()
+        detail_head.addWidget(label("SELECTED TRAJECTORY FACTS", "SectionTitle"))
+        detail_head.addStretch()
+        self.episode = QComboBox()
+        self.episode.currentIndexChanged.connect(self._episode_selected)
+        detail_head.addWidget(self.episode)
+        detail_panel.layout().addLayout(detail_head)
+        self.details = QTableWidget(0, 10)
+        self.details.setHorizontalHeaderLabels(
+            [
+                "Step",
+                "Simulator action",
+                "Target",
+                "Result",
+                "Access",
+                "CVE",
+                "CVSS",
+                "Technique",
+                "Reward",
+                "Knowledge Δ",
+            ]
+        )
+        configure_table(self.details, stretch_column=1)
+        detail_panel.layout().addWidget(self.details)
+        self.root.addWidget(detail_panel)
+        self.provenance = label("", "MonoDetail", wrap=True)
+        self.root.addWidget(self.provenance)
+        self.reports: list[dict] = []
+        self.current_report: dict = {}
+
+    def apply(self, data: DashboardData) -> None:
+        self.reports = list(data.attack_path_reports)
+        self.selector.blockSignals(True)
+        self.selector.clear()
+        for report in self.reports:
+            provenance = report.get("provenance") or {}
+            self.selector.addItem(
+                f"{provenance.get('experiment_id', 'unknown')} · "
+                f"{str(report.get('report_id', ''))[:12]}",
+                report.get("report_id"),
+            )
+        self.selector.blockSignals(False)
+        self._selected(0)
+
+    def _selected(self, index: int) -> None:
+        if not 0 <= index < len(self.reports):
+            self.current_report = {}
+            self.mode.setText("NO STORED REPORT")
+            self.navigator.set_events([])
+            self.graph.clear_graph("No persisted Phase 14 report")
+            fill_table(self.criticality, [])
+            fill_table(self.details, [])
+            return
+        report = self.reports[index]
+        self.current_report = report
+        mode = str(report.get("report_mode", "unknown"))
+        self.mode.setText(mode.upper())
+        analysis = report.get("cross_episode_analysis") or {}
+        techniques = analysis.get("technique_coverage") or []
+        self.trajectories.update_value(
+            str(analysis.get("trajectory_count", 0)), "Recorded episodes"
+        )
+        self.techniques.update_value(str(len(techniques)), "Catalogue-mapped")
+        self.crown_reach.update_value(
+            percent(analysis.get("crown_jewel_reach_rate")), "Observed outcomes"
+        )
+        self.failed_actions.update_value(
+            (
+                str(analysis["failed_action_count"])
+                if analysis.get("failed_action_count") is not None
+                else "—"
+            ),
+            str(analysis.get("failed_action_observation", "When recorded")).replace("_", " "),
+        )
+        facts = list(report.get("facts") or [])
+        events = [_fact_event(fact) for fact in facts]
+        self.navigator.set_events(events)
+        observed_graph = report.get("observed_graph") or {}
+        self.graph.set_graph(
+            list(observed_graph.get("nodes") or []),
+            list(observed_graph.get("edges") or []),
+            events,
+        )
+        criticality = list(report.get("observed_path_criticality") or [])
+        fill_table(
+            self.criticality,
+            [
+                (
+                    item.get("cve_id", "—"),
+                    f"{float(item.get('observed_path_criticality_percentage', 0)):.1f}%",
+                    item.get("observed_successful_paths_broken", 0),
+                    item.get("successful_trajectories_containing", 0),
+                    item.get("cvss_score", "—"),
+                    item.get("technique_id", "—"),
+                )
+                for item in criticality
+            ],
+        )
+        episode_ids = list(dict.fromkeys(str(fact.get("episode_id")) for fact in facts))
+        self.episode.blockSignals(True)
+        self.episode.clear()
+        self.episode.addItems(episode_ids)
+        self.episode.blockSignals(False)
+        self._episode_selected(0)
+        provenance = report.get("provenance") or {}
+        self.provenance.setText(
+            f"REPORT  {report.get('report_id', '—')}\n"
+            f"SOURCE  {provenance.get('source_trajectory_sha256', '—')}\n"
+            f"FACTS   {provenance.get('facts_payload_sha256', '—')}\n"
+            f"MITRE   {provenance.get('mitre_catalogue_version', '—')} · "
+            f"{provenance.get('mitre_catalogue_sha256', '—')}"
+        )
+
+    def _episode_selected(self, index: int) -> None:
+        if index < 0:
+            fill_table(self.details, [])
+            return
+        episode_id = self.episode.itemText(index)
+        facts = [
+            fact
+            for fact in self.current_report.get("facts", [])
+            if str(fact.get("episode_id")) == episode_id
+        ]
+        fill_table(
+            self.details,
+            [
+                (
+                    fact.get("trajectory_step", "—"),
+                    fact.get("simulator_action", "—"),
+                    fact.get("target", "—"),
+                    "SUCCESS" if fact.get("success") else "FAILED",
+                    fact.get("access_gained", "—"),
+                    fact.get("cve_id", "—"),
+                    fact.get("cvss_score", "—"),
+                    fact.get("technique_id", "UNMAPPED"),
+                    "—" if fact.get("reward") is None else fact["reward"],
+                    "—"
+                    if fact.get("knowledge_delta") is None
+                    else fact["knowledge_delta"],
+                )
+                for fact in facts
+            ],
+        )
+
+
+def _fact_event(fact: dict) -> dict:
+    mapping = []
+    if fact.get("framework") and fact.get("technique_id"):
+        mapping = [
+            {
+                "framework": fact["framework"],
+                "tactic_id": fact.get("tactic_id"),
+                "tactic_name": fact.get("tactic_name"),
+                "technique_id": fact["technique_id"],
+                "technique_name": fact.get("technique_name"),
+            }
+        ]
+    return {
+        "step": fact.get("trajectory_step"),
+        "action": fact.get("action_kind"),
+        "simulator_action": fact.get("simulator_action"),
+        "target": fact.get("target"),
+        "target_entity": fact.get("target"),
+        "success": bool(fact.get("success")),
+        "state_changed": bool(fact.get("state_changed")),
+        "framework_mappings": mapping,
+        "outcomes": list(fact.get("outcomes") or []),
+    }
+
+
 class ResearchPage(Page):
     def __init__(self) -> None:
         super().__init__(
@@ -835,6 +1074,7 @@ class MainWindow(QMainWindow):
         ("Overview", "Mission control"),
         ("MITRE Workspace", "MITRE Navigator workspace"),
         ("Attack Paths", "Attack paths"),
+        ("Path Report", "Explainable attack-path report"),
         ("Research", "Research studies"),
         ("Runs", "Stored runs"),
         ("System", "System status"),
@@ -896,6 +1136,7 @@ class MainWindow(QMainWindow):
             OverviewPage(),
             SimulationPage(self.backend, self.notify),
             PathsPage(self.backend, self.notify),
+            AttackPathReportPage(),
             ResearchPage(),
             RunsPage(),
             SystemPage(),

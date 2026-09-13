@@ -72,6 +72,36 @@ podman compose run --rm app python scripts/run_experiment.py \
 
 Generated checkpoints and results remain local and gitignored.
 
+## Explainable attack-path reports
+
+Phase 14 reconstructs deterministic report facts from recorded trajectory events. The
+pipeline keeps policy actions, resolved simulator actions, recorded events, versioned MITRE
+mappings and report facts as separate layers. ATT&CK and ATLAS semantics come exclusively
+from `configs/catalogues/mitre.yaml`; ordinary RL control is never labelled as ATLAS.
+
+Generate the example simulation report from the existing `experiment_01` trajectory package,
+persist its derived facts to PostgreSQL, and verify exact reconstruction:
+
+```bash
+make phase14-report
+make phase14-verify
+```
+
+The desktop console's **Path Report** workspace reads those stored derived facts. It shows a
+MITRE timeline, observed AgentKnowledge targets, selected-trajectory facts, provenance and an
+observed path-critical CVE ranking. Normal reports never read hidden `TrueTopology`.
+
+Two report modes are enforced:
+
+- `simulation_report` may describe synthetic PPO/simulator actions, rewards and knowledge;
+- `evidence_report` may describe imported scanner observations, but rejects PPO, checkpoint,
+  RL-action and simulator-reward claims.
+
+Observed path criticality is deliberately not presented as a patching counterfactual. For
+example, “CVE-X was path-critical in 61% of observed successful trajectories” describes the
+recorded sample only; it does not claim patching would block 61% of all attacks. Generated
+reports remain under ignored `results/` and are not published.
+
 ## Reproducing the environment
 
 ```bash
@@ -112,6 +142,8 @@ src/rlredteam/
   enterprise/        Hidden truth, agent knowledge, observations and on-prem simulator.
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
+  attack_path_report.py  Phase 14 deterministic facts, phases and observed criticality.
+  phase14_completion.py Fail-closed source-to-report reconstruction verifier.
 
 gui/                 Native PySide6 research console — separate Podman image
   backend.py         typed snapshot adapter for database and persisted artefacts

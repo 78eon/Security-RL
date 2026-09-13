@@ -26,6 +26,7 @@ from rlredteam.enterprise.hierarchical_study import (
     current_input_manifest,
     validate_paired_training_isolation,
 )
+from rlredteam.historical_provenance import frozen_inputs_match
 
 
 class HierarchicalCompletionError(RuntimeError):
@@ -98,9 +99,10 @@ def _verify_protocol(
     require(isinstance(study, dict), "study metadata must be a JSON object")
 
     current = current_input_manifest(config)
+    frozen_matches, frozen_detail = frozen_inputs_match(repo_root, current, frozen)
     require(
-        current == {key: frozen.get(key) for key in current},
-        "current Phase 12 inputs differ from the frozen protocol",
+        frozen_matches,
+        f"Phase 12 frozen protocol cannot be reconstructed: {frozen_detail}",
     )
     hierarchy = frozen.get("hierarchy", {})
     catalogue = fixed_action_catalogue()

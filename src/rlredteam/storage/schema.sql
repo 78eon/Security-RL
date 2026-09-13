@@ -144,3 +144,41 @@ CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs (experiment_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_run ON episodes (run_id) WHERE run_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_episodes_run_idx
     ON episodes (run_id, episode_idx) WHERE run_id IS NOT NULL;
+
+-- Phase 14 derived reporting. Raw episodes/steps remain immutable inputs; the
+-- GUI reads this persisted deterministic payload instead of recomputing facts.
+CREATE TABLE IF NOT EXISTS attack_path_reports (
+    report_id                    TEXT PRIMARY KEY,
+    report_mode                  TEXT NOT NULL
+        CHECK (report_mode IN ('simulation_report', 'evidence_report')),
+    experiment_key               TEXT NOT NULL,
+    run_keys                     TEXT[] NOT NULL,
+    source_trajectory_sha256     TEXT NOT NULL CHECK (length(source_trajectory_sha256) = 64),
+    facts_payload_sha256         TEXT NOT NULL CHECK (length(facts_payload_sha256) = 64),
+    mitre_catalogue_sha256       TEXT NOT NULL CHECK (length(mitre_catalogue_sha256) = 64),
+    mitre_catalogue_version      TEXT NOT NULL,
+    source_checkpoint_hashes     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    report_schema_version        TEXT NOT NULL,
+    report_data                  JSONB NOT NULL,
+    created_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS attack_path_report_facts (
+    report_id   TEXT NOT NULL REFERENCES attack_path_reports(report_id) ON DELETE CASCADE,
+    fact_index  INTEGER NOT NULL CHECK (fact_index >= 0),
+    episode_key TEXT NOT NULL,
+    fact_data   JSONB NOT NULL,
+    PRIMARY KEY (report_id, fact_index)
+);
+
+CREATE TABLE IF NOT EXISTS attack_path_report_criticalities (
+    report_id        TEXT NOT NULL REFERENCES attack_path_reports(report_id) ON DELETE CASCADE,
+    cve_id           TEXT NOT NULL,
+    criticality_data JSONB NOT NULL,
+    PRIMARY KEY (report_id, cve_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attack_path_reports_experiment
+    ON attack_path_reports (experiment_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attack_path_report_facts_episode
+    ON attack_path_report_facts (report_id, episode_key);

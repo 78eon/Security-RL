@@ -10,6 +10,8 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
+from gui.data.repository import Repository  # noqa: E402
+from rlredteam.attack_path_report import build_report  # noqa: E402
 from rlredteam.storage.postgres_logger import (  # noqa: E402
     EpisodeLogger,
     EpisodeRecord,
@@ -17,6 +19,7 @@ from rlredteam.storage.postgres_logger import (  # noqa: E402
     connection_string,
     ensure_schema,
 )
+from rlredteam.storage.report_store import ReportStore  # noqa: E402
 
 pytestmark = pytest.mark.postgres
 
@@ -255,6 +258,78 @@ def test_framework_semantics_round_trip_separately_from_actions(
         "T1210",
         "Exploitation of Remote Services",
     )
+
+
+def test_phase14_derived_report_round_trips_without_changing_raw_steps(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0, steps=1))
+    logger.flush()
+    document = [
+        {
+            "run_name": "pytest-synthetic",
+            "evaluation_seed": 1001,
+            "training_seed": 42,
+            "reward_mode": "shaped",
+            "policy_return": 1.0,
+            "native_return": 1.0,
+            "goal_reached": True,
+            "events": [
+                {
+                    "step": 0,
+                    "action": "e_srv_0",
+                    "action_kind": "exploit",
+                    "target": [1, 0],
+                    "success": True,
+                    "state_changed": True,
+                    "is_crown_jewel": True,
+                    "cve_id": "CVE-2021-42013",
+                    "cvss_base": 9.8,
+                }
+            ],
+        }
+    ]
+    report = build_report(
+        document,
+        source_trajectory_hash="a" * 64,
+        mode="simulation_report",
+        experiment_id="pytest-synthetic",
+        checkpoint_hashes={"pytest-synthetic": "b" * 64},
+    )
+
+    with psycopg.connect(conninfo) as conn:
+        ensure_schema(conn)
+        before = conn.execute(
+            "SELECT count(*) FROM steps s JOIN episodes e ON e.id=s.episode_id "
+            "WHERE e.experiment_id=%s",
+            (logger.experiment_id,),
+        ).fetchone()[0]
+        store = ReportStore(conn)
+        assert store.save(report) == report.report_id
+        assert store.save(report) == report.report_id
+        reconstructed = store.load(report.report_id)
+        fact_count = conn.execute(
+            "SELECT count(*) FROM attack_path_report_facts WHERE report_id=%s",
+            (report.report_id,),
+        ).fetchone()[0]
+        criticality_count = conn.execute(
+            "SELECT count(*) FROM attack_path_report_criticalities WHERE report_id=%s",
+            (report.report_id,),
+        ).fetchone()[0]
+        after = conn.execute(
+            "SELECT count(*) FROM steps s JOIN episodes e ON e.id=s.episode_id "
+            "WHERE e.experiment_id=%s",
+            (logger.experiment_id,),
+        ).fetchone()[0]
+        gui_reports = Repository().attack_path_reports()
+        conn.execute("DELETE FROM attack_path_reports WHERE report_id=%s", (report.report_id,))
+        conn.commit()
+
+    assert reconstructed == report.to_dict()
+    assert fact_count == len(report.facts)
+    assert criticality_count == len(report.observed_path_criticality)
+    assert any(item["report_id"] == report.report_id for item in gui_reports)
+    assert before == after == 1
 
 
 def test_evaluation_run_attaches_to_training_experiment(

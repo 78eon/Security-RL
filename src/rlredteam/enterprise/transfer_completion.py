@@ -16,6 +16,7 @@ from rlredteam.enterprise.transfer_study import (
     current_input_manifest,
     validate_paired_target_isolation,
 )
+from rlredteam.historical_provenance import frozen_inputs_match
 
 
 class TransferCompletionError(RuntimeError):
@@ -66,9 +67,10 @@ def _verify_protocol(repo_root: Path) -> tuple[TransferResearchConfig, dict, dic
     frozen = _json(repo_root / "configs/frozen_transfer_learning.json")
     study = _json(repo_root / "results" / config.experiment_id / "test/metadata/study.json")
     current = current_input_manifest(config)
+    frozen_matches, frozen_detail = frozen_inputs_match(repo_root, current, frozen)
     require(
-        current == {key: frozen.get(key) for key in current},
-        "current Phase 11 inputs differ from the frozen protocol",
+        frozen_matches,
+        f"Phase 11 frozen protocol cannot be reconstructed: {frozen_detail}",
     )
     expected = {
         "study_id": config.experiment_id,

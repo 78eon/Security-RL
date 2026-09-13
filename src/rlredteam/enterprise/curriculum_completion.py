@@ -19,6 +19,7 @@ from rlredteam.enterprise.curriculum_study import (
     validate_paired_training_isolation,
 )
 from rlredteam.enterprise.generalisation import sha256_file
+from rlredteam.historical_provenance import frozen_inputs_match
 
 
 class CurriculumCompletionError(RuntimeError):
@@ -72,9 +73,10 @@ def _verify_protocol(repo_root: Path) -> tuple[CurriculumResearchConfig, dict, d
     require(isinstance(frozen, dict), "frozen inputs must be a JSON object")
     require(isinstance(study, dict), "study metadata must be a JSON object")
     current = current_input_manifest(config)
+    frozen_matches, frozen_detail = frozen_inputs_match(repo_root, current, frozen)
     require(
-        current == {key: frozen.get(key) for key in current},
-        "current Phase 9 inputs differ from the frozen protocol",
+        frozen_matches,
+        f"Phase 9 frozen protocol cannot be reconstructed: {frozen_detail}",
     )
     expected = {
         "study_id": config.experiment_id,

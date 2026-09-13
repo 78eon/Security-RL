@@ -17,6 +17,7 @@ from rlredteam.enterprise.graph_policy_study import (
     observation_schema,
     validate_paired_training_isolation,
 )
+from rlredteam.historical_provenance import frozen_inputs_match
 
 
 class GraphPolicyCompletionError(RuntimeError):
@@ -70,9 +71,10 @@ def _verify_protocol(repo_root: Path) -> tuple[GraphPolicyResearchConfig, dict, 
     require(isinstance(frozen, dict), "frozen inputs must be a JSON object")
     require(isinstance(study, dict), "study metadata must be a JSON object")
     current = current_input_manifest(config)
+    frozen_matches, frozen_detail = frozen_inputs_match(repo_root, current, frozen)
     require(
-        current == {key: frozen.get(key) for key in current},
-        "current Phase 10 inputs differ from the frozen protocol",
+        frozen_matches,
+        f"Phase 10 frozen protocol cannot be reconstructed: {frozen_detail}",
     )
     expected = {
         "study_id": config.experiment_id,
