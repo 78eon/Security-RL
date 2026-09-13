@@ -154,6 +154,7 @@ class NASimEventAdapter:
             action_name=action.name,
             target=target,
             success=success,
+            rl_action_index=int(action_idx),
             native_reward=float(reward),
             cost=float(action.cost),
             cve_id=record.cve_id if record else None,

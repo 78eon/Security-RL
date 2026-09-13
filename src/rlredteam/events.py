@@ -59,6 +59,7 @@ class AttackEvent:
     action_name: str
     target: tuple[int, int] | None
     success: bool
+    rl_action_index: int | None = None
 
     # Taken verbatim from the environment, always logged so results can also be
     # reported in native NASim units even when training on the shaped reward.

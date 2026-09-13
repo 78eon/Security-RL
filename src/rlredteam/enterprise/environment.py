@@ -44,6 +44,7 @@ class EnterpriseAction:
 @dataclass(frozen=True, slots=True)
 class EnterpriseEvent:
     step: int
+    rl_action_index: int
     action: EnterpriseAction
     success: bool
     state_changed: bool
@@ -360,6 +361,7 @@ class EnterpriseCyberEnv(gym.Env):
         )
         event = EnterpriseEvent(
             step=self._step - 1,
+            rl_action_index=int(action),
             action=selected,
             success=success,
             state_changed=changed,

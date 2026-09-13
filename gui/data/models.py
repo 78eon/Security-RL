@@ -85,6 +85,10 @@ class StepRow:
     state_changed: bool = False
     prerequisites: list[str] = field(default_factory=list)
     outcomes: list[str] = field(default_factory=list)
+    rl_action_index: int | None = None
+    simulator_action: str | None = None
+    framework_mappings: list[dict[str, str]] = field(default_factory=list)
+    mapping_persisted: bool = False
 
     @property
     def target(self) -> str | tuple[int, int] | None:

@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS steps (
     step_idx      INTEGER NOT NULL,
     action_name   TEXT    NOT NULL,
     action_kind   TEXT    NOT NULL,
+    rl_action_index INTEGER CONSTRAINT steps_rl_action_index_nonnegative
+        CHECK (rl_action_index IS NULL OR rl_action_index >= 0),
+    simulator_action TEXT NOT NULL,
+    framework_mappings JSONB NOT NULL DEFAULT '[]'::jsonb,
     tactic        TEXT,
     technique_id  TEXT,
     target_subnet INTEGER,
@@ -98,10 +102,44 @@ ALTER TABLE steps ADD COLUMN IF NOT EXISTS target_entity TEXT;
 ALTER TABLE steps ADD COLUMN IF NOT EXISTS state_changed BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE steps ADD COLUMN IF NOT EXISTS prerequisites JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE steps ADD COLUMN IF NOT EXISTS outcomes JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS rl_action_index INTEGER;
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS simulator_action TEXT;
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS framework_mappings JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'steps_rl_action_index_nonnegative'
+    ) THEN
+        ALTER TABLE steps ADD CONSTRAINT steps_rl_action_index_nonnegative
+            CHECK (rl_action_index IS NULL OR rl_action_index >= 0);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_episodes_experiment_seed ON episodes (experiment_id, seed);
 CREATE INDEX IF NOT EXISTS idx_steps_episode ON steps (episode_id);
 CREATE INDEX IF NOT EXISTS idx_steps_cve ON steps (cve_id) WHERE cve_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_steps_framework_mappings
+    ON steps USING GIN (framework_mappings)
+    WHERE framework_mappings <> '[]'::jsonb;
+
+CREATE OR REPLACE VIEW step_framework_techniques AS
+SELECT
+    steps.id AS step_id,
+    steps.episode_id,
+    steps.step_idx,
+    steps.rl_action_index,
+    COALESCE(steps.simulator_action, steps.action_name) AS simulator_action,
+    mapping ->> 'framework' AS framework,
+    mapping ->> 'mapping_version' AS mapping_version,
+    mapping ->> 'tactic_id' AS tactic_id,
+    mapping ->> 'tactic_name' AS tactic_name,
+    mapping ->> 'technique_id' AS technique_id,
+    mapping ->> 'technique_name' AS technique_name,
+    mapping ->> 'source_url' AS source_url
+FROM steps
+CROSS JOIN LATERAL jsonb_array_elements(steps.framework_mappings) AS mapping;
+
 CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs (experiment_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_run ON episodes (run_id) WHERE run_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_episodes_run_idx

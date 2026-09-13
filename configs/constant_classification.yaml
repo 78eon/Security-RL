@@ -1,0 +1,19 @@
+constant_policy:
+  version: security-rl-constant-policy-v1
+  categories: [protocol, model_schema, deployment, simulated_world]
+  protocol:
+    version_manifest: configs/protocol_versions.yaml
+    rule: Stable action/event slots, experiment arm identities, and wire/storage contracts.
+  model_schema:
+    rule: Typed graph vocabulary, validation bounds, data shapes, and presentation tokens.
+  deployment:
+    rule: Repository paths, endpoints, runtime locations, and non-secret operational defaults.
+  simulated_world:
+    roots:
+      - configs/catalogues
+      - configs/enterprise_profiles.yaml
+      - configs/onprem_topology.yaml
+    rule: Services, ports, OS/application/identity/cloud choices, vulnerabilities, assets, and framework metadata.
+  secrets:
+    source: environment_variables_only
+    required: [POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]

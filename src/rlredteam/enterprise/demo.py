@@ -7,29 +7,25 @@ from rlredteam.enterprise.environment import (
     EnterpriseCyberEnv,
     EnterpriseEvent,
 )
-from rlredteam.enterprise.generator import generate_enterprise
+from rlredteam.enterprise.generator import (
+    generate_enterprise,
+    load_reference_enterprise_catalogue,
+)
 
-DEMO_PATH = (
-    (EnterpriseActionType.DISCOVER_NETWORK, "seg_dmz"),
-    (EnterpriseActionType.ENUMERATE_HOST, "web_host"),
-    (EnterpriseActionType.ENUMERATE_SERVICE, "http"),
-    (EnterpriseActionType.ENUMERATE_APPLICATION, "portal"),
-    (EnterpriseActionType.ASSESS_VULNERABILITY, "http"),
-    (EnterpriseActionType.EXPLOIT, "CVE-2021-42013"),
-    (EnterpriseActionType.OBTAIN_CREDENTIAL, "svc_orders"),
-    (EnterpriseActionType.AUTHENTICATE, "app_host"),
-    (EnterpriseActionType.ENUMERATE_HOST, "app_host"),
-    (EnterpriseActionType.PIVOT, "db_host"),
-    (EnterpriseActionType.ENUMERATE_HOST, "db_host"),
-    (EnterpriseActionType.ENUMERATE_APPLICATION, "customer_db"),
-    (EnterpriseActionType.AUTHENTICATE, "customer_db"),
-    (EnterpriseActionType.ACCESS_ASSET, "customer_records"),
+_REFERENCE = load_reference_enterprise_catalogue()
+DEMO_PATH = tuple(
+    (EnterpriseActionType(action), str(target))
+    for action, target in _REFERENCE["demo_path"]
 )
 
 
 def run_demo(seed: int = 42) -> tuple[EnterpriseCyberEnv, tuple[EnterpriseEvent, ...], float]:
     """Execute the known-feasible path and return its actual recorded events."""
-    env = EnterpriseCyberEnv(generate_enterprise(seed), max_steps=50, render_mode="ansi")
+    env = EnterpriseCyberEnv(
+        generate_enterprise(seed),
+        max_steps=int(_REFERENCE["demo_max_steps"]),
+        render_mode="ansi",
+    )
     env.reset(seed=seed)
     total_reward = 0.0
     for action_type, target in DEMO_PATH:

@@ -1,0 +1,100 @@
+catalogue:
+  version: security-rl-reference-enterprise-v1
+  name_template: enterprise-seed-{seed}
+  demo_max_steps: 50
+  entry_points: [internet]
+  crown_jewels: [customer_records]
+  nodes:
+    - {id: internet, type: entry_point, name: Internet, attributes: {}}
+    - {id: seg_dmz, type: network_segment, name: DMZ, attributes: {cidr: 10.10.0.0/24}}
+    - {id: seg_app, type: network_segment, name: Application, attributes: {cidr: 10.20.0.0/24}}
+    - {id: seg_data, type: network_segment, name: Data, attributes: {cidr: 10.30.0.0/24}}
+    - {id: fw_edge, type: security_control, name: Edge firewall, attributes: {control: firewall}}
+    - {id: web_host, type: host, name: Public web server, attributes: {os: linux, ip: 10.10.0.10}}
+    - {id: http, type: service, name: HTTPS, attributes: {port: 443, protocol: tcp, product: apache_http_server, version: 2.4.50}}
+    - {id: portal, type: application, name: Customer portal, attributes: {framework: synthetic-web}}
+    - {id: app_host, type: host, name: Application server, attributes: {os: linux, ip: 10.20.0.10, product: synthetic_linux_host, version: '1.0'}}
+    - {id: orders_api, type: api, name: Orders API, attributes: {protocol: https}}
+    - {id: svc_orders, type: identity, name: Orders service account, attributes: {privilege: service}}
+    - {id: db_host, type: host, name: Database server, attributes: {os: linux, ip: 10.30.0.10}}
+    - {id: customer_db, type: database, name: Customer database, attributes: {engine: postgresql}}
+    - {id: customer_records, type: asset, name: Customer records, attributes: {classification: restricted, value: 100}}
+    - {id: edr_app, type: security_control, name: Application EDR, attributes: {control: edr}}
+  edges:
+    - {source: internet, target: seg_dmz, type: connects, attributes: {}}
+    - {source: fw_edge, target: seg_dmz, type: protects, attributes: {}}
+    - {source: seg_dmz, target: seg_app, type: connects, attributes: {filtered: true}}
+    - {source: seg_app, target: seg_data, type: connects, attributes: {filtered: true}}
+    - {source: web_host, target: seg_dmz, type: located_in, attributes: {}}
+    - {source: app_host, target: seg_app, type: located_in, attributes: {}}
+    - {source: db_host, target: seg_data, type: located_in, attributes: {}}
+    - {source: web_host, target: http, type: hosts, attributes: {}}
+    - {source: http, target: portal, type: exposes, attributes: {}}
+    - {source: portal, target: orders_api, type: calls, attributes: {}}
+    - {source: app_host, target: orders_api, type: hosts, attributes: {}}
+    - {source: web_host, target: svc_orders, type: yields_credential, attributes: {}}
+    - {source: svc_orders, target: app_host, type: has_access, attributes: {privilege: user}}
+    - {source: svc_orders, target: customer_db, type: has_access, attributes: {privilege: read}}
+    - {source: app_host, target: db_host, type: pivots_to, attributes: {}}
+    - {source: db_host, target: customer_db, type: hosts, attributes: {}}
+    - {source: customer_db, target: customer_records, type: contains, attributes: {}}
+    - {source: edr_app, target: app_host, type: protects, attributes: {detection_uniform: [0.1, 0.4]}}
+  vulnerabilities:
+    - id: CVE-2021-42013
+      target: http
+      cvss: 9.8
+      exploit_probability: 1.0
+      grants_access_to: web_host
+      affected_product: apache_http_server
+      affected_versions: ['2.4.50']
+      privilege: user
+      description: Frozen catalogue analogue for Apache HTTP Server 2.4.50
+    - id: SYN-APP-PRIV-001
+      target: app_host
+      cvss_uniform: [6.0, 8.5]
+      exploit_probability: 1.0
+      grants_access_to: app_host
+      affected_product: synthetic_linux_host
+      affected_versions: ['1.0']
+      privilege: root
+      description: Synthetic local privilege-escalation flaw
+  extras:
+    workstation:
+      id_template: workstation_{index}
+      type: host
+      name_template: Employee workstation {index}
+      os_pool: onprem
+      ip_template: 10.20.0.{address}
+      first_address: 30
+      segment: seg_app
+    service:
+      id_template: service_{index}_{product}
+      hosts: [app_host, db_host, web_host]
+      pool:
+        - {product: ssh, version: synthetic, port: 22, protocol: tcp}
+        - {product: smb, version: synthetic, port: 445, protocol: tcp}
+        - {product: rdp, version: synthetic, port: 3389, protocol: tcp}
+        - {product: dns, version: synthetic, port: 53, protocol: udp}
+        - {product: ldap, version: synthetic, port: 389, protocol: tcp}
+    cloud:
+      id: cloud_backup
+      type: cloud_resource
+      name: Cloud backup
+      attributes: {provider: synthetic}
+      source: customer_db
+      edge_type: calls
+  demo_path:
+    - [discover_network, seg_dmz]
+    - [enumerate_host, web_host]
+    - [enumerate_service, http]
+    - [enumerate_application, portal]
+    - [assess_vulnerability, http]
+    - [exploit, CVE-2021-42013]
+    - [obtain_credential, svc_orders]
+    - [authenticate, app_host]
+    - [enumerate_host, app_host]
+    - [pivot, db_host]
+    - [enumerate_host, db_host]
+    - [enumerate_application, customer_db]
+    - [authenticate, customer_db]
+    - [access_asset, customer_records]

@@ -22,9 +22,19 @@ class FakeRepository:
         return [
             SimpleNamespace(
                 step_idx=0,
+                rl_action_index=17,
                 target=(2, 3),
                 action_name="simulated-service-action",
+                simulator_action="simulated-service-action",
                 action_kind="exploit",
+                framework_mappings=[
+                    {
+                        "framework": "attack-enterprise",
+                        "technique_id": "T1210",
+                        "technique_name": "Exploitation of Remote Services",
+                    }
+                ],
+                mapping_persisted=True,
                 technique_id="T1190",
                 cve_id="CVE-2024-3400",
                 success=True,
@@ -56,10 +66,22 @@ def test_backend_adapts_stored_steps_to_path_data() -> None:
             "confidence": "100%",
             "trajectory": [
                 {
-                    "step": 0,
-                    "action": "exploit",
-                    "target": "(2, 3)",
-                    "outcomes": ["root_access:(2, 3)"],
+                        "step": 0,
+                        "action": "exploit",
+                        "rl_action_index": 17,
+                        "simulator_action": "simulated-service-action",
+                        "framework_mappings": [
+                            {
+                                "framework": "attack-enterprise",
+                                "technique_id": "T1210",
+                                "technique_name": "Exploitation of Remote Services",
+                            }
+                        ],
+                        "mapping_persisted": True,
+                        "target": "(2, 3)",
+                        "success": True,
+                        "state_changed": True,
+                        "outcomes": ["root_access:(2, 3)"],
                 }
             ],
         }
@@ -160,3 +182,14 @@ def test_backend_runs_typed_graph_simulation_without_network(monkeypatch) -> Non
     }
     assert result.trajectory[-1]["action_kind"] == "access_asset"
     assert len(result.trajectory) < result.episode_steps
+    assert all(event["rl_action_index"] >= 0 for event in result.events)
+    assert all(event["simulator_action"] == event["action"] for event in result.events)
+    assert all(
+        mapping["framework"] != "atlas"
+        for event in result.events
+        for mapping in event["framework_mappings"]
+    )
+    unsupported = next(
+        event for event in result.events if event["action_kind"] == "obtain_credential"
+    )
+    assert unsupported["framework_mappings"] == []

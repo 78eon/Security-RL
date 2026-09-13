@@ -12,6 +12,7 @@ from pathlib import Path
 import gymnasium as gym
 import yaml
 
+from rlredteam.catalogues import WorldCatalogue, load_world_catalogue
 from rlredteam.enterprise.environment import EnterpriseCyberEnv
 from rlredteam.enterprise.model import (
     EdgeType,
@@ -57,13 +58,13 @@ class EnterpriseProfileConfig:
     max_nodes: int
     max_vulnerabilities: int
     max_steps: int
-    profiles: dict[DeploymentProfile, ProfileDefinition]
+    profiles: dict[str, ProfileDefinition]
 
     @classmethod
     def from_yaml(cls, path: Path | None = None) -> EnterpriseProfileConfig:
         raw = yaml.safe_load((path or DEFAULT_PROFILE_CONFIG).read_text())["enterprise_profiles"]
         definitions = {
-            DeploymentProfile(name): ProfileDefinition(
+            str(name): ProfileDefinition(
                 network_types=tuple(NodeType(item) for item in value["network_types"]),
                 host_types=tuple(NodeType(item) for item in value["host_types"]),
                 identity_types=tuple(NodeType(item) for item in value["identity_types"]),
@@ -78,11 +79,12 @@ class EnterpriseProfileConfig:
         return config
 
     def validate(self) -> None:
-        if set(self.profiles) != {
-            DeploymentProfile.LEGACY,
-            DeploymentProfile.CLOUD,
-            DeploymentProfile.HYBRID,
-        }:
+        required = {
+            item.value
+            for item in DeploymentProfile
+            if item is not DeploymentProfile.ON_PREMISES
+        }
+        if not required <= set(self.profiles):
             raise ValueError("legacy, cloud and hybrid definitions are required")
         if not (1 <= self.min_segments <= self.max_segments <= 5):
             raise ValueError("segment range must remain within 1..5")
@@ -113,7 +115,7 @@ class EnterpriseProfileConfig:
                 )
             },
             "profiles": {
-                name.value: {
+                name: {
                     "network_types": [item.value for item in definition.network_types],
                     "host_types": [item.value for item in definition.host_types],
                     "identity_types": [item.value for item in definition.identity_types],
@@ -121,7 +123,7 @@ class EnterpriseProfileConfig:
                     "control": definition.control,
                     "boundary": definition.boundary,
                 }
-                for name, definition in sorted(self.profiles.items(), key=lambda item: item[0])
+                for name, definition in sorted(self.profiles.items())
             },
         }
         return hashlib.sha256(
@@ -142,16 +144,20 @@ def generate_profile_topology(
     profile: DeploymentProfile | str,
     seed: int,
     config: EnterpriseProfileConfig | None = None,
+    catalogue: WorldCatalogue | None = None,
 ) -> TrueTopology:
     """Generate one profile using the shared typed graph and action semantics."""
-    selected = DeploymentProfile(profile)
-    if selected == DeploymentProfile.ON_PREMISES:
+    selected = profile.value if isinstance(profile, DeploymentProfile) else str(profile)
+    if selected == DeploymentProfile.ON_PREMISES.value:
         return generate_onprem_topology(seed)
     config = config or EnterpriseProfileConfig.from_yaml()
+    catalogue = catalogue or load_world_catalogue()
+    if selected not in config.profiles:
+        raise ValueError(f"unknown enterprise profile: {selected}")
     definition = config.profiles[selected]
     rng = random.Random(int(seed))
     segment_count = rng.randint(config.min_segments, config.max_segments)
-    if selected == DeploymentProfile.HYBRID:
+    if selected == DeploymentProfile.HYBRID.value:
         # Every hybrid sample must cross a real modelled boundary.  Seeded
         # variation may change its size, but cannot silently collapse it into
         # a single-environment graph.
@@ -172,29 +178,29 @@ def generate_profile_topology(
     network_types = _cycle_with_required(rng, definition.network_types, segment_count)
     segments = [f"network_{index + 1}" for index in range(segment_count)]
     for segment, kind in zip(segments, network_types, strict=True):
-        node(segment, kind, f"{selected.value} network {segment}", profile=selected.value)
+        node(segment, kind, f"{selected} network {segment}", profile=selected)
     node("control_edge", NodeType.SECURITY_CONTROL, "Boundary control", control=definition.control)
     edge("entry", segments[0], EdgeType.CONNECTS)
     edge("control_edge", segments[0], EdgeType.PROTECTS)
     for source, target in zip(segments, segments[1:], strict=False):
         edge(source, target, EdgeType.CONNECTS, trust_boundary=definition.boundary)
 
-    products = (
-        ("synthetic_tls", "1.0", 443, "SYN-PROFILE-TLS"),
-        ("synthetic_gateway", "2.0", 8443, "SYN-PROFILE-GATEWAY"),
-        ("synthetic_remote", "3.0", 22, "SYN-PROFILE-REMOTE"),
-    )
-    product, version, port, vulnerability_id = rng.choice(products)
+    binding = catalogue.generator_bindings["enterprise_profile"]
+    service = rng.choice(catalogue.service_pool(str(binding["service_pool"])))
+    if service.vulnerability is None:
+        raise ValueError("profile entry services require a vulnerability ID")
     all_host_types = _cycle_with_required(rng, definition.host_types, host_count)
     path_host_types = all_host_types[: pivot_count + 2]
-    node("host_entry", path_host_types[0], "Entry workload", profile=selected.value)
+    node("host_entry", path_host_types[0], "Entry workload", profile=selected)
     node(
         "service_entry", NodeType.SERVICE, "External service",
-        product=product, version=version, port=port,
+        product=service.product,
+        version=service.version,
+        port=service.port,
     )
     edge("host_entry", segments[0], EdgeType.LOCATED_IN)
     edge("host_entry", "service_entry", EdgeType.HOSTS)
-    node("application_entry", NodeType.APPLICATION, "Business application")
+    node("application_entry", NodeType(catalogue.application_types[0]), "Business application")
     edge("service_entry", "application_entry", EdgeType.EXPOSES)
 
     identity_types = _cycle_with_required(rng, definition.identity_types, 2)
@@ -213,7 +219,13 @@ def generate_profile_topology(
     store_type = rng.choice(definition.store_types)
     node("identity_data", identity_data_type, "Data identity")
     node("store_crown", store_type, "Restricted enterprise store")
-    node("asset_crown", NodeType.ASSET, "Restricted business data", value=100)
+    crown = catalogue.crown_jewel(str(binding["crown_jewel_template"]))
+    node(
+        "asset_crown",
+        NodeType(crown.node_type),
+        crown.name,
+        value=crown.value,
+    )
     edge("host_data", "identity_data", EdgeType.YIELDS_CREDENTIAL)
     edge("identity_data", "store_crown", EdgeType.HAS_ACCESS)
     edge("host_data", "store_crown", EdgeType.HOSTS)
@@ -230,21 +242,35 @@ def generate_profile_topology(
         edge(host_id, rng.choice(segments), EdgeType.LOCATED_IN)
     for index in range(decoy_services):
         service_id = f"service_decoy_{index + 1}"
-        node(service_id, NodeType.SERVICE, f"Decoy service {index + 1}", port=8000 + index)
+        node(
+            service_id,
+            NodeType.SERVICE,
+            f"Decoy service {index + 1}",
+            port=int(binding["decoy_port_base"]) + index,
+        )
         edge(rng.choice(["host_entry", *path_hosts]), service_id, EdgeType.HOSTS)
 
     vulnerability = Vulnerability(
-        id=vulnerability_id,
+        id=service.vulnerability,
         target="service_entry",
-        cvss=round(rng.uniform(7.0, 9.8), 1),
-        exploit_probability=1.0,
+        cvss=round(
+            rng.uniform(
+                float(catalogue.vulnerability_defaults["cvss_min"]),
+                float(catalogue.vulnerability_defaults["cvss_max"]),
+            ),
+            1,
+        ),
+        exploit_probability=float(
+            catalogue.vulnerability_defaults["exploit_probability"]
+        ),
         grants_access_to="host_entry",
-        affected_product=product,
-        affected_versions=(version,),
-        description=f"Synthetic {selected.value} profile weakness",
+        affected_product=service.product,
+        affected_versions=(service.version,),
+        privilege=str(catalogue.vulnerability_defaults["privilege"]),
+        description=f"Synthetic {selected} profile weakness",
     )
     return TrueTopology(
-        name=f"enterprise-{selected.value}-v1-seed-{seed}",
+        name=f"enterprise-{selected}-v1-seed-{seed}",
         nodes=nodes,
         edges=edges,
         vulnerabilities={vulnerability.id: vulnerability},
@@ -261,7 +287,7 @@ class InfrastructureCurriculumEnv(gym.Env):
     def __init__(
         self,
         topology_seeds: tuple[int, ...] | list[int],
-        profiles: tuple[DeploymentProfile, ...] | list[DeploymentProfile],
+        profiles: tuple[DeploymentProfile | str, ...] | list[DeploymentProfile | str],
         *,
         config: EnterpriseProfileConfig | None = None,
     ) -> None:
@@ -269,17 +295,23 @@ class InfrastructureCurriculumEnv(gym.Env):
         if not topology_seeds or not profiles:
             raise ValueError("topology seeds and profiles are required")
         self.topology_seeds = tuple(map(int, topology_seeds))
-        self.profiles = tuple(DeploymentProfile(item) for item in profiles)
-        if DeploymentProfile.ON_PREMISES in self.profiles:
+        self.profiles = tuple(
+            item.value if isinstance(item, DeploymentProfile) else str(item)
+            for item in profiles
+        )
+        if DeploymentProfile.ON_PREMISES.value in self.profiles:
             raise ValueError("the frozen on-prem control uses OnPremCurriculumEnv")
         self.config = config or EnterpriseProfileConfig.from_yaml()
+        unknown = set(self.profiles) - set(self.config.profiles)
+        if unknown:
+            raise ValueError(f"unknown enterprise profiles: {sorted(unknown)}")
         self.topology_seed = self.topology_seeds[0]
         self.profile = self.profiles[0]
         self._env = self._make(self.profile, self.topology_seed)
         self.action_space = self._env.action_space
         self.observation_space = self._env.observation_space
 
-    def _make(self, profile: DeploymentProfile, seed: int) -> EnterpriseCyberEnv:
+    def _make(self, profile: str, seed: int) -> EnterpriseCyberEnv:
         return EnterpriseCyberEnv(
             generate_profile_topology(profile, seed, self.config),
             max_steps=self.config.max_steps,
@@ -306,9 +338,9 @@ class InfrastructureCurriculumEnv(gym.Env):
             else int(self.np_random.choice(self.topology_seeds))
         )
         requested_profile = (
-            DeploymentProfile(raw_profile)
+            str(raw_profile)
             if raw_profile is not None
-            else DeploymentProfile(self.np_random.choice(self.profiles))
+            else str(self.np_random.choice(self.profiles))
         )
         if requested_seed not in self.topology_seeds or requested_profile not in self.profiles:
             raise ValueError("requested seed/profile is outside this curriculum")
@@ -321,7 +353,7 @@ class InfrastructureCurriculumEnv(gym.Env):
         observation, info = self._env.reset(seed=seed)
         info.update(
             {
-                "profile": self.profile.value,
+                "profile": self.profile,
                 "topology_seed": self.topology_seed,
                 "topology_hash": topology_digest(self.true_topology),
                 "profile_config_hash": self.config.digest(),
@@ -333,7 +365,7 @@ class InfrastructureCurriculumEnv(gym.Env):
         observation, reward, terminated, truncated, info = self._env.step(action)
         info.update(
             {
-                "profile": self.profile.value,
+                "profile": self.profile,
                 "topology_seed": self.topology_seed,
                 "topology_hash": topology_digest(self.true_topology),
             }

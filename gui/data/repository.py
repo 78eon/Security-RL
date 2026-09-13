@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import psycopg
 
 from gui.data.models import EpisodeRow, RunSummary, StepRow
+from rlredteam.frameworks import map_simulator_behavior
 
 
 class RepositoryError(RuntimeError):
@@ -183,22 +184,45 @@ class Repository:
 
     def steps(self, episode_id: int) -> list[StepRow]:
         sql = """
-            SELECT step_idx, action_name, action_kind, tactic, technique_id,
-                   target_subnet, target_host, success, reward, native_reward,
-                   cve_id, cvss_base, target_entity, state_changed,
-                   prerequisites, outcomes
+            SELECT step_idx, action_name, action_kind,
+                   (to_jsonb(steps)->>'rl_action_index')::integer,
+                   COALESCE(to_jsonb(steps)->>'simulator_action', action_name),
+                   COALESCE(to_jsonb(steps)->'framework_mappings', '[]'::jsonb),
+                   tactic, technique_id, target_subnet, target_host, success,
+                   reward, native_reward, cve_id, cvss_base, target_entity,
+                   state_changed, prerequisites, outcomes
             FROM steps WHERE episode_id = %s ORDER BY step_idx
         """
         with self._connect() as conn:
             rows = conn.execute(sql, (episode_id,)).fetchall()
-        return [
-            StepRow(
-                step_idx=r[0], action_name=r[1], action_kind=r[2], tactic=r[3],
-                technique_id=r[4], target_subnet=r[5], target_host=r[6],
-                success=r[7], reward=float(r[8]), native_reward=float(r[9]),
-                cve_id=r[10], cvss_base=float(r[11]) if r[11] is not None else None,
-                target_entity=r[12], state_changed=bool(r[13]),
-                prerequisites=list(r[14] or []), outcomes=list(r[15] or []),
+        output = []
+        for row in rows:
+            persisted = list(row[5] or [])
+            mappings = persisted or [
+                mapping.as_dict() for mapping in map_simulator_behavior(str(row[2]))
+            ]
+            output.append(
+                StepRow(
+                    step_idx=row[0],
+                    action_name=row[1],
+                    action_kind=row[2],
+                    tactic=row[6],
+                    technique_id=row[7],
+                    target_subnet=row[8],
+                    target_host=row[9],
+                    success=row[10],
+                    reward=float(row[11]),
+                    native_reward=float(row[12]),
+                    cve_id=row[13],
+                    cvss_base=float(row[14]) if row[14] is not None else None,
+                    target_entity=row[15],
+                    state_changed=bool(row[16]),
+                    prerequisites=list(row[17] or []),
+                    outcomes=list(row[18] or []),
+                    rl_action_index=row[3],
+                    simulator_action=row[4],
+                    framework_mappings=mappings,
+                    mapping_persisted=bool(persisted),
+                )
             )
-            for r in rows
-        ]
+        return output

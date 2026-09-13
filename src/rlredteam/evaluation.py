@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from rlredteam.catalogue import CVECatalogue
+from rlredteam.frameworks import event_framework_fields
 from rlredteam.manifest import digest
 from rlredteam.nasim_adapter import RewardWrapper
 from rlredteam.provenance import ExperimentManifest, git_commit, topology_hash
@@ -179,6 +180,11 @@ def evaluate_policy(
                     "step": event.step,
                     "action": event.action_name,
                     "action_kind": str(event.kind),
+                    **event_framework_fields(
+                        rl_action_index=event.rl_action_index,
+                        simulator_action=event.action_name,
+                        action_kind=str(event.kind),
+                    ),
                     "target": list(event.target) if event.target else None,
                     "success": event.success,
                     "native_reward": event.native_reward,
@@ -320,6 +326,9 @@ def _step_record(step: dict):
         step_idx=int(step["step"]),
         action_name=str(step["action"]),
         action_kind=str(step["action_kind"]),
+        rl_action_index=step.get("rl_action_index"),
+        simulator_action=str(step.get("simulator_action") or step["action"]),
+        framework_mappings=list(step.get("framework_mappings") or []),
         tactic=step.get("tactic"),
         technique_id=step.get("technique_id"),
         target_subnet=int(target[0]) if target else None,

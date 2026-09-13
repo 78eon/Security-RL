@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from math import ceil
 
 from PySide6.QtCore import QRectF, Qt, QTimer
@@ -18,11 +17,13 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
     QStackedWidget,
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,7 @@ from gui import theme
 from gui.backend import ApplicationBackend, BackendPort, DashboardData
 from gui.data.models import StudySummary
 from gui.widgets.enterprise_graph import EnterpriseGraph
+from gui.widgets.mitre_navigator import MitreNavigator
 from gui.workers.query import run_async
 
 
@@ -230,16 +232,22 @@ class OverviewPage(Page):
 
 
 class SimulationPage(Page):
-    """Run and inspect one real backend-generated offline enterprise graph."""
+    """Reactive MITRE workspace for one offline enterprise episode."""
 
     def __init__(self, backend: BackendPort, notify) -> None:
         super().__init__(
-            "OFFLINE ENTERPRISE BACKEND",
-            "Simulator",
-            "Generate a hidden legacy, cloud, hybrid or on-premises topology and replay "
-            "the trace-derived causal route. No network traffic is produced.",
+            "EVENT-DRIVEN ATT&CK + ATLAS",
+            "MITRE Navigator workspace",
+            "Replay policy-visible progress through ATT&CK and ATLAS semantics while "
+            "keeping Ground Truth isolated from AgentKnowledge.",
         )
         self.backend, self.notify = backend, notify
+        self.result = None
+        self.events: list[dict] = []
+        self.replay_timer = QTimer(self)
+        self.replay_timer.setInterval(480)
+        self.replay_timer.timeout.connect(self._advance_replay)
+
         controls = panel(QHBoxLayout())
         controls.layout().addWidget(label("Environment", "FieldLabel"))
         self.profile = QComboBox()
@@ -251,11 +259,11 @@ class SimulationPage(Page):
         self.seed.setValue(2001)
         controls.layout().addWidget(self.seed)
         controls.layout().addStretch()
-        self.run_button = button("Generate and simulate", "Primary")
+        self.run_button = button("Run offline episode", "Primary")
         self.run_button.setEnabled(False)
         self.run_button.clicked.connect(self.run)
         controls.layout().addWidget(self.run_button)
-        self.replay_button = button("Replay causal route")
+        self.replay_button = button("Replay episode")
         self.replay_button.setEnabled(False)
         self.replay_button.clicked.connect(self.graph_replay)
         controls.layout().addWidget(self.replay_button)
@@ -266,32 +274,63 @@ class SimulationPage(Page):
 
         metric_row = QHBoxLayout()
         self.outcome = Metric("OUTCOME", "READY", "Backend not yet executed")
-        self.entities = Metric("ENTITIES", "—", "Typed graph nodes")
-        self.relationships = Metric("RELATIONSHIPS", "—", "Typed graph edges")
+        self.entities = Metric("GROUND TRUTH", "—", "Analyst-only graph entities")
+        self.knowledge_count = Metric("AGENT KNOWLEDGE", "—", "Discovered entities")
         self.coverage = Metric("DISCOVERY COVERAGE", "—", "AgentKnowledge")
-        for item in (self.outcome, self.entities, self.relationships, self.coverage):
+        for item in (self.outcome, self.entities, self.knowledge_count, self.coverage):
             metric_row.addWidget(item)
         self.root.addLayout(metric_row)
 
-        graph_panel = panel(QVBoxLayout())
-        graph_head = QHBoxLayout()
-        graph_head.addWidget(label("FULL TYPED TOPOLOGY", "SectionTitle"))
-        graph_head.addStretch()
-        graph_head.addWidget(label("Drag to pan · wheel to zoom · amber = causal route", "Muted"))
-        graph_panel.layout().addLayout(graph_head)
-        self.graph = EnterpriseGraph()
-        graph_panel.layout().addWidget(self.graph)
-        self.root.addWidget(graph_panel)
+        replay_panel = panel(QVBoxLayout())
+        replay_head = QHBoxLayout()
+        replay_head.addWidget(label("EPISODE REPLAY", "SectionTitle"))
+        self.step_label = label("Step 0 / 0", "MonoDetail")
+        replay_head.addStretch()
+        replay_head.addWidget(self.step_label)
+        replay_panel.layout().addLayout(replay_head)
+        self.timeline = QSlider(Qt.Orientation.Horizontal)
+        self.timeline.setRange(0, 0)
+        self.timeline.valueChanged.connect(self._render_step)
+        replay_panel.layout().addWidget(self.timeline)
+        context = QHBoxLayout()
+        self.rl_context = label("RL ACTION  —", "ActionLayer")
+        self.simulator_context = label("SIMULATOR  —", "ActionLayer")
+        self.mitre_context = label("MITRE  —", "ActionLayer", wrap=True)
+        context.addWidget(self.rl_context, 1)
+        context.addWidget(self.simulator_context, 2)
+        context.addWidget(self.mitre_context, 3)
+        replay_panel.layout().addLayout(context)
+        self.root.addWidget(replay_panel)
 
-        entity_panel = panel(QVBoxLayout())
-        entity_panel.layout().addWidget(label("ENTITY INVENTORY", "SectionTitle"))
-        self.nodes = QTableWidget(0, 4)
-        self.nodes.setHorizontalHeaderLabels(["Entity", "Type", "Display name", "Attributes"])
-        configure_table(self.nodes, stretch_column=2)
-        self.nodes.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.nodes.setMaximumHeight(230)
-        entity_panel.layout().addWidget(self.nodes)
-        self.root.addWidget(entity_panel)
+        matrix_panel = panel(QVBoxLayout())
+        matrix_head = QHBoxLayout()
+        matrix_head.addWidget(label("MITRE TACTIC VIEW", "SectionTitle"))
+        matrix_head.addStretch()
+        matrix_head.addWidget(
+            label(
+                "Event mappings only · hidden topology cannot activate cells",
+                "Muted",
+            )
+        )
+        matrix_panel.layout().addLayout(matrix_head)
+        self.navigator = MitreNavigator()
+        self.navigator.setMinimumHeight(330)
+        matrix_panel.layout().addWidget(self.navigator)
+        self.root.addWidget(matrix_panel)
+
+        views_panel = panel(QVBoxLayout())
+        views_panel.layout().addWidget(label("ENVIRONMENT VIEWS", "SectionTitle"))
+        self.views = QTabWidget()
+        self.views.setObjectName("EnvironmentViews")
+        self.knowledge_graph = EnterpriseGraph()
+        self.graph = self.knowledge_graph
+        self.path_graph = TrajectoryGraph()
+        self.truth_graph = EnterpriseGraph()
+        self.views.addTab(self.knowledge_graph, "AgentKnowledge")
+        self.views.addTab(self.path_graph, "Attack path")
+        self.views.addTab(self.truth_graph, "Ground Truth · analyst only")
+        views_panel.layout().addWidget(self.views)
+        self.root.addWidget(views_panel)
 
         if hasattr(self.backend, "simulation_profiles"):
             self._profiles_task = run_async(
@@ -326,39 +365,95 @@ class SimulationPage(Page):
         )
 
     def _completed(self, result) -> None:
+        self.result = result
+        self.events = list(result.events)
         self.run_button.setEnabled(True)
-        self.replay_button.setEnabled(bool(result.trajectory))
+        self.replay_button.setEnabled(bool(self.events))
         outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
         self.outcome.update_value(
-            outcome, f"{result.episode_steps} raw steps · {len(result.trajectory)} causal events"
+            outcome,
+            f"{result.episode_steps} events · {len(result.trajectory)} causal events",
         )
-        self.entities.update_value(str(len(result.nodes)), result.profile.replace("_", " "))
-        self.relationships.update_value(str(len(result.edges)), result.topology_name)
+        self.entities.update_value(
+            str(len(result.nodes)), f"{len(result.edges)} typed relationships"
+        )
         self.coverage.update_value(
             percent(result.discovery_coverage), "Policy-visible discovered entities"
         )
         self.banner.update_state(
             "COMPLETE", f"hash {result.topology_hash} · {result.agent}"
         )
-        self.graph.set_graph(result.nodes, result.edges, result.trajectory)
-        fill_table(
-            self.nodes,
-            [
-                (
-                    item["id"],
-                    item["type"].replace("_", " "),
-                    item["name"],
-                    json.dumps(item["attributes"], sort_keys=True),
-                )
-                for item in result.nodes
-            ],
-        )
+        self.timeline.setRange(0, len(self.events))
+        self.timeline.setValue(len(self.events))
+        self._render_step(len(self.events))
         self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
 
     def graph_replay(self) -> None:
-        self.graph.replay()
+        if not self.events:
+            return
+        self.replay_timer.stop()
+        self.timeline.setValue(0)
+        self.replay_timer.start()
+
+    def _advance_replay(self) -> None:
+        next_step = self.timeline.value() + 1
+        self.timeline.setValue(next_step)
+        if next_step >= len(self.events):
+            self.replay_timer.stop()
+
+    def _render_step(self, visible_count: int) -> None:
+        self.navigator.set_events(self.events, visible_count)
+        self.step_label.setText(f"Step {visible_count} / {len(self.events)}")
+        if self.result is None:
+            return
+        visible = self.events[:visible_count]
+        current = visible[-1] if visible else None
+        if current is None:
+            self.rl_context.setText("RL ACTION  —")
+            self.simulator_context.setText("SIMULATOR  —")
+            self.mitre_context.setText("MITRE  —")
+            self.knowledge_count.update_value("0", "No replayed discoveries")
+            self.knowledge_graph.clear_graph("Replay has not started")
+            self.path_graph.set_steps([])
+            self.truth_graph.set_graph(self.result.nodes, self.result.edges, [])
+            return
+
+        action_index = current.get("rl_action_index")
+        self.rl_context.setText(
+            f"RL ACTION  #{action_index}" if action_index is not None else "RL ACTION  scripted"
+        )
+        self.simulator_context.setText(
+            f"SIMULATOR  {current.get('simulator_action') or current.get('action')}"
+        )
+        mappings = current.get("framework_mappings") or []
+        mapped = " · ".join(
+            f"{item.get('technique_id')} {item.get('technique_name')}"
+            for item in mappings
+            if isinstance(item, dict)
+        )
+        self.mitre_context.setText(f"MITRE  {mapped or 'UNMAPPED · unsupported semantic'}")
+
+        knowledge = current.get("knowledge") or {}
+        known_ids = set(knowledge.get("nodes") or [])
+        known_nodes = [node for node in self.result.nodes if node["id"] in known_ids]
+        known_edges = list(knowledge.get("edges") or [])
+        self.knowledge_count.update_value(
+            str(len(known_nodes)),
+            f"{len(knowledge.get('access') or {})} accessed · "
+            f"{len(knowledge.get('credentials') or [])} credentials",
+        )
+        self.knowledge_graph.set_graph(known_nodes, known_edges, visible)
+        current_step = int(current.get("step", visible_count - 1))
+        visible_path = [
+            step
+            for step in self.result.trajectory
+            if int(step.get("step", 0)) <= current_step
+        ]
+        self.path_graph.set_steps(visible_path)
+        self.truth_graph.set_graph(self.result.nodes, self.result.edges, visible)
 
     def _failed(self, error: str, detail: str) -> None:
+        self.replay_timer.stop()
         self.run_button.setEnabled(self.profile.count() > 0)
         self.replay_button.setEnabled(False)
         self.outcome.update_value("FAILED", error)
@@ -465,6 +560,22 @@ class PathsPage(Page):
         graph_panel.layout().addWidget(self.graph)
         self.root.addWidget(graph_panel)
 
+        matrix_panel = panel(QVBoxLayout())
+        matrix_panel.layout().addWidget(
+            label("TRACE-DERIVED MITRE TACTIC VIEW", "SectionTitle")
+        )
+        matrix_panel.layout().addWidget(
+            label(
+                "Only semantics stored with episode events are highlighted; topology is not read.",
+                "Muted",
+                wrap=True,
+            )
+        )
+        self.navigator = MitreNavigator()
+        self.navigator.setMinimumHeight(300)
+        matrix_panel.layout().addWidget(self.navigator)
+        self.root.addWidget(matrix_panel)
+
         table_panel = panel(QVBoxLayout())
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
@@ -489,13 +600,16 @@ class PathsPage(Page):
             str(len(paths)), "Loaded from PostgreSQL" if paths else "No replayable step rows"
         )
         self.graph.set_steps(paths[0].get("trajectory", []) if paths else [])
+        self.navigator.set_events(paths[0].get("trajectory", []) if paths else [])
         if paths:
             self.table.selectRow(0)
 
     def _select_path(self, row: int, column: int) -> None:
         del column
         if 0 <= row < len(self.paths):
-            self.graph.set_steps(self.paths[row].get("trajectory", []))
+            trajectory = self.paths[row].get("trajectory", [])
+            self.graph.set_steps(trajectory)
+            self.navigator.set_events(trajectory)
 
     def _replay(self) -> None:
         self.graph.replay()
@@ -719,7 +833,7 @@ class SystemPage(Page):
 class MainWindow(QMainWindow):
     PAGE_DATA = [
         ("Overview", "Mission control"),
-        ("Simulator", "Enterprise simulator"),
+        ("MITRE Workspace", "MITRE Navigator workspace"),
         ("Attack Paths", "Attack paths"),
         ("Research", "Research studies"),
         ("Runs", "Stored runs"),

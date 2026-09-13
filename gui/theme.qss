@@ -131,3 +131,50 @@ QScrollBar:horizontal { background: #081316; height: 10px; }
 QScrollBar::handle:horizontal { background: #294147; border-radius: 4px; min-width: 32px; }
 QStatusBar { background: #071013; border-top: 1px solid #1c3035; color: #72888e; }
 QToolTip { background: #112426; color: #e8f0f1; border: 1px solid #2c555b; }
+
+QLabel#ActionLayer {
+    color: #a5bec3;
+    background: #081316;
+    border: 1px solid #1c3035;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 10px;
+}
+QLabel#MatrixSummary { color: #86a5aa; font-size: 11px; }
+QLabel#TacticId, QLabel#TechniqueId, QLabel#TechniqueCount {
+    color: #72888e;
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 9px;
+}
+QLabel#TacticName { color: #d6e3e5; font-weight: 650; }
+QLabel#TechniqueName { color: #9db1b5; font-size: 11px; }
+QFrame#TacticColumn {
+    background: #081316;
+    border: 1px solid #1c3035;
+    border-radius: 4px;
+}
+QFrame#TechniqueCell {
+    background: #0a1619;
+    border: 1px solid #1c3035;
+    border-radius: 3px;
+}
+QFrame#TechniqueCell[state="attempted"] { border-color: #ffba52; background: #2a1f16; }
+QFrame#TechniqueCell[state="progressed"] { border-color: #48dbe2; background: #10262a; }
+QFrame#TechniqueCell[state="current"] { border: 2px solid #b7f04a; background: #142c27; }
+QTabWidget::pane { border: 1px solid #1c3035; background: #071114; }
+QTabBar::tab {
+    background: #0b171b;
+    color: #72888e;
+    border: 1px solid #1c3035;
+    padding: 8px 14px;
+}
+QTabBar::tab:selected { color: #48dbe2; border-bottom: 2px solid #48dbe2; }
+QSlider::groove:horizontal { height: 4px; background: #1c3035; }
+QSlider::handle:horizontal {
+    background: #48dbe2;
+    border: 1px solid #86e3e5;
+    width: 14px;
+    margin: -6px 0;
+    border-radius: 7px;
+}

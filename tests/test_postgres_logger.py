@@ -75,6 +75,7 @@ def make_episode(idx: int, *, steps: int = 3) -> EpisodeRecord:
                 step_idx=s,
                 action_name=f"e_srv_{s}",
                 action_kind="exploit",
+                rl_action_index=100 + s,
                 tactic="exploit",
                 technique_id="T1210",
                 target_subnet=1,
@@ -209,6 +210,51 @@ def test_enterprise_step_evidence_round_trips(logger: EpisodeLogger, conninfo: s
     assert row[:3] == ("topology-realised-42", 12, 15)
     assert row[3] == pytest.approx(0.8)
     assert row[4:] == ("host_0", True, ["known:service"], ["access:host_0"])
+
+
+def test_framework_semantics_round_trip_separately_from_actions(
+    logger: EpisodeLogger, conninfo: str
+) -> None:
+    logger.log_episode(make_episode(0, steps=1))
+    logger.flush()
+
+    with psycopg.connect(conninfo) as conn:
+        row = conn.execute(
+            """
+            SELECT s.rl_action_index, s.simulator_action,
+                   s.framework_mappings, s.action_kind, s.tactic
+            FROM steps s
+            JOIN episodes ep ON ep.id = s.episode_id
+            WHERE ep.experiment_id = %s
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+        exposed = conn.execute(
+            """
+            SELECT ft.rl_action_index, ft.simulator_action, ft.framework,
+                   ft.mapping_version, ft.tactic_id, ft.technique_id,
+                   ft.technique_name
+            FROM step_framework_techniques ft
+            JOIN episodes ep ON ep.id = ft.episode_id
+            WHERE ep.experiment_id = %s AND ft.step_idx = 0
+            """,
+            (logger.experiment_id,),
+        ).fetchone()
+
+    assert row[0] == 100
+    assert row[1] == "e_srv_0"
+    assert row[2][0]["framework"] == "attack-enterprise"
+    assert row[2][0]["technique_id"] == "T1210"
+    assert row[3:] == ("exploit", "exploit")
+    assert exposed == (
+        100,
+        "e_srv_0",
+        "attack-enterprise",
+        "security-rl-mitre-v1",
+        "TA0008",
+        "T1210",
+        "Exploitation of Remote Services",
+    )
 
 
 def test_evaluation_run_attaches_to_training_experiment(

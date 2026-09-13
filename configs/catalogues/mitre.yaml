@@ -1,0 +1,50 @@
+catalogue:
+  version: security-rl-mitre-v1
+  frameworks:
+    attack-enterprise:
+      source: https://attack.mitre.org/
+      techniques:
+        - {tactic_id: TA0007, tactic_name: Discovery, technique_id: T1018, technique_name: Remote System Discovery, source_url: https://attack.mitre.org/techniques/T1018/}
+        - {tactic_id: TA0007, tactic_name: Discovery, technique_id: T1046, technique_name: Network Service Discovery, source_url: https://attack.mitre.org/techniques/T1046/}
+        - {tactic_id: TA0007, tactic_name: Discovery, technique_id: T1057, technique_name: Process Discovery, source_url: https://attack.mitre.org/techniques/T1057/}
+        - {tactic_id: TA0007, tactic_name: Discovery, technique_id: T1082, technique_name: System Information Discovery, source_url: https://attack.mitre.org/techniques/T1082/}
+        - {tactic_id: TA0007, tactic_name: Discovery, technique_id: T1518, technique_name: Software Discovery, source_url: https://attack.mitre.org/techniques/T1518/}
+        - {tactic_id: TA0001, tactic_name: Initial Access, technique_id: T1078, technique_name: Valid Accounts, source_url: https://attack.mitre.org/techniques/T1078/}
+        - {tactic_id: TA0008, tactic_name: Lateral Movement, technique_id: T1021, technique_name: Remote Services, source_url: https://attack.mitre.org/techniques/T1021/}
+        - {tactic_id: TA0008, tactic_name: Lateral Movement, technique_id: T1210, technique_name: Exploitation of Remote Services, source_url: https://attack.mitre.org/techniques/T1210/}
+        - {tactic_id: TA0004, tactic_name: Privilege Escalation, technique_id: T1068, technique_name: Exploitation for Privilege Escalation, source_url: https://attack.mitre.org/techniques/T1068/}
+        - {tactic_id: TA0009, tactic_name: Collection, technique_id: T1005, technique_name: Data from Local System, source_url: https://attack.mitre.org/techniques/T1005/}
+    atlas:
+      source: https://atlas.mitre.org/
+      techniques:
+        - {tactic_id: AML.TA0000, tactic_name: AI Model Access, technique_id: AML.T0040, technique_name: AI Model Inference API Access, source_url: https://atlas.mitre.org/techniques/AML.T0040}
+        - {tactic_id: AML.TA0000, tactic_name: AI Model Access, technique_id: AML.T0044, technique_name: Full AI Model Access, source_url: https://atlas.mitre.org/techniques/AML.T0044}
+        - {tactic_id: AML.TA0008, tactic_name: Discovery, technique_id: AML.T0007, technique_name: Discover AI Artifacts, source_url: https://atlas.mitre.org/techniques/AML.T0007}
+        - {tactic_id: AML.TA0008, tactic_name: Discovery, technique_id: AML.T0014, technique_name: Discover AI Model Family, source_url: https://atlas.mitre.org/techniques/AML.T0014}
+        - {tactic_id: AML.TA0008, tactic_name: Discovery, technique_id: AML.T0013, technique_name: Discover AI Model Ontology, source_url: https://atlas.mitre.org/techniques/AML.T0013}
+        - {tactic_id: AML.TA0009, tactic_name: Collection, technique_id: AML.T0035, technique_name: AI Artifact Collection, source_url: https://atlas.mitre.org/techniques/AML.T0035}
+        - {tactic_id: AML.TA0010, tactic_name: Exfiltration, technique_id: AML.T0024, technique_name: Exfiltration via AI Inference API, source_url: https://atlas.mitre.org/techniques/AML.T0024}
+  simulator_action_mappings:
+    discover_network: T1018
+    enumerate_host: T1082
+    enumerate_service: T1046
+    enumerate_application: T1518
+    assess_vulnerability: T1046
+    exploit: T1210
+    authenticate: T1078
+    pivot: T1021
+    escalate_privilege: T1068
+    access_asset: T1005
+    service_scan: T1046
+    os_scan: T1082
+    subnet_scan: T1018
+    process_scan: T1057
+    privesc: T1068
+  ai_behavior_mappings:
+    model_inference_api_access: AML.T0040
+    full_model_access: AML.T0044
+    discover_ai_artifacts: AML.T0007
+    discover_model_family: AML.T0014
+    discover_model_ontology: AML.T0013
+    ai_artifact_collection: AML.T0035
+    exfiltrate_via_inference_api: AML.T0024

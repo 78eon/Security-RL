@@ -1,0 +1,57 @@
+catalogue:
+  version: security-rl-world-v1
+  services:
+    profile_entry:
+      - {product: synthetic_tls, version: '1.0', port: 443, protocol: tcp, vulnerability: SYN-PROFILE-TLS}
+      - {product: synthetic_gateway, version: '2.0', port: 8443, protocol: tcp, vulnerability: SYN-PROFILE-GATEWAY}
+      - {product: synthetic_remote, version: '3.0', port: 22, protocol: tcp, vulnerability: SYN-PROFILE-REMOTE}
+    onprem_entry:
+      - {product: synthetic_https, version: '1.0', port: 443, protocol: tcp, vulnerability: SYN-ENTRY-HTTPS}
+      - {product: synthetic_ssh, version: '2.1', port: 22, protocol: tcp, vulnerability: SYN-ENTRY-SSH}
+      - {product: synthetic_gateway, version: '3.0', port: 8443, protocol: tcp, vulnerability: SYN-ENTRY-GATEWAY}
+    decoy:
+      - {product: ssh, version: synthetic, port: 22, protocol: tcp}
+      - {product: smb, version: synthetic, port: 445, protocol: tcp}
+      - {product: dns, version: synthetic, port: 53, protocol: udp}
+      - {product: rdp, version: synthetic, port: 3389, protocol: tcp}
+  os_choices:
+    onprem: [linux, windows]
+    enterprise: [linux, windows-server, container-linux]
+    hybrid_decoy: [windows-2008, linux, container-linux]
+  application_types: [application, api]
+  identity_types: [identity, identity_provider, iam_role]
+  cloud_resource_types: [cloud_resource, cloud_account, cloud_network, cloud_workload, storage]
+  vulnerabilities:
+    defaults:
+      cvss_min: 7.0
+      cvss_max: 9.8
+      exploit_probability: 1.0
+      privilege: user
+  crown_jewel_templates:
+    restricted_business_data:
+      node_type: asset
+      name: Restricted business data
+      classification: restricted
+      value: 100
+    restricted_business_records:
+      node_type: asset
+      name: Restricted business records
+      classification: restricted
+      value: 100
+    restricted_hybrid_data:
+      node_type: asset
+      name: Restricted hybrid business data
+      classification: restricted
+      value: 100
+  generator_bindings:
+    onprem:
+      service_pool: onprem_entry
+      decoy_service_pool: decoy
+      entry_os: linux
+      internal_os: linux
+      decoy_os_pool: onprem
+      crown_jewel_template: restricted_business_records
+    enterprise_profile:
+      service_pool: profile_entry
+      decoy_port_base: 8000
+      crown_jewel_template: restricted_business_data

@@ -1,10 +1,15 @@
-"""Seeded generator for valid heterogeneous enterprise environments."""
+"""Seeded generator for catalogue-defined enterprise environments."""
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+import yaml
+
+from rlredteam.catalogues import load_world_catalogue
 from rlredteam.enterprise.model import (
     EdgeType,
     EnterpriseEdge,
@@ -13,6 +18,9 @@ from rlredteam.enterprise.model import (
     NodeType,
     Vulnerability,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_REFERENCE_CATALOGUE = REPO_ROOT / "configs/catalogues/reference_enterprise.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,141 +34,158 @@ class EnterpriseGeneratorConfig:
             raise ValueError("extra entity counts cannot be negative")
 
 
+def load_reference_enterprise_catalogue(path: Path | None = None) -> dict[str, Any]:
+    """Load and minimally validate the versioned reference-world document."""
+    selected = path or DEFAULT_REFERENCE_CATALOGUE
+    document = yaml.safe_load(selected.read_text())
+    raw = document.get("catalogue") if isinstance(document, dict) else None
+    if not isinstance(raw, dict):
+        raise ValueError("reference enterprise catalogue root is missing")
+    if raw.get("version") != "security-rl-reference-enterprise-v1":
+        raise ValueError("unsupported reference enterprise catalogue version")
+    required = {
+        "nodes",
+        "edges",
+        "vulnerabilities",
+        "entry_points",
+        "crown_jewels",
+        "extras",
+        "demo_path",
+        "demo_max_steps",
+    }
+    if not required <= set(raw):
+        raise ValueError("reference enterprise catalogue is incomplete")
+    collections = {
+        "nodes", "edges", "vulnerabilities", "entry_points", "crown_jewels", "demo_path"
+    }
+    if not all(isinstance(raw[field], list) and raw[field] for field in collections):
+        raise ValueError("reference enterprise catalogue collections cannot be empty")
+    if not isinstance(raw["extras"], dict):
+        raise ValueError("reference enterprise extras must be a mapping")
+    return raw
+
+
 def generate_enterprise(
     seed: int,
     config: EnterpriseGeneratorConfig | None = None,
+    catalogue_path: Path | None = None,
 ) -> EnterpriseGraph:
-    """Generate one reproducible graph with at least one feasible attack path.
-
-    The graph includes a guaranteed web-to-database path plus seeded distractor
-    hosts and services.  Values and exploit probabilities vary by seed, while
-    identifiers remain stable enough for experiment tooling and demonstrations.
-    """
+    """Generate one reproducible graph from validated catalogue data."""
     config = config or EnterpriseGeneratorConfig()
+    raw = load_reference_enterprise_catalogue(catalogue_path)
+    world = load_world_catalogue()
     rng = random.Random(seed)
     nodes: dict[str, EnterpriseNode] = {}
     edges: list[EnterpriseEdge] = []
 
-    def node(node_id: str, kind: NodeType, name: str, **attributes) -> None:
-        nodes[node_id] = EnterpriseNode(node_id, kind, name, attributes)
-
-    def edge(source: str, target: str, kind: EdgeType, **attributes) -> None:
-        edges.append(EnterpriseEdge(source, target, kind, attributes))
-
-    node("internet", NodeType.ENTRY_POINT, "Internet")
-    node("seg_dmz", NodeType.NETWORK_SEGMENT, "DMZ", cidr="10.10.0.0/24")
-    node("seg_app", NodeType.NETWORK_SEGMENT, "Application", cidr="10.20.0.0/24")
-    node("seg_data", NodeType.NETWORK_SEGMENT, "Data", cidr="10.30.0.0/24")
-    node("fw_edge", NodeType.SECURITY_CONTROL, "Edge firewall", control="firewall")
-    node("web_host", NodeType.HOST, "Public web server", os="linux", ip="10.10.0.10")
-    node(
-        "http",
-        NodeType.SERVICE,
-        "HTTPS",
-        port=443,
-        protocol="tcp",
-        product="apache_http_server",
-        version="2.4.50",
-    )
-    node("portal", NodeType.APPLICATION, "Customer portal", framework="synthetic-web")
-    node(
-        "app_host",
-        NodeType.HOST,
-        "Application server",
-        os="linux",
-        ip="10.20.0.10",
-        product="synthetic_linux_host",
-        version="1.0",
-    )
-    node("orders_api", NodeType.API, "Orders API", protocol="https")
-    node("svc_orders", NodeType.IDENTITY, "Orders service account", privilege="service")
-    node("db_host", NodeType.HOST, "Database server", os="linux", ip="10.30.0.10")
-    node("customer_db", NodeType.DATABASE, "Customer database", engine="postgresql")
-    node(
-        "customer_records",
-        NodeType.ASSET,
-        "Customer records",
-        classification="restricted",
-        value=100,
-    )
-    node("edr_app", NodeType.SECURITY_CONTROL, "Application EDR", control="edr")
-
-    edge("internet", "seg_dmz", EdgeType.CONNECTS)
-    edge("fw_edge", "seg_dmz", EdgeType.PROTECTS)
-    edge("seg_dmz", "seg_app", EdgeType.CONNECTS, filtered=True)
-    edge("seg_app", "seg_data", EdgeType.CONNECTS, filtered=True)
-    edge("web_host", "seg_dmz", EdgeType.LOCATED_IN)
-    edge("app_host", "seg_app", EdgeType.LOCATED_IN)
-    edge("db_host", "seg_data", EdgeType.LOCATED_IN)
-    edge("web_host", "http", EdgeType.HOSTS)
-    edge("http", "portal", EdgeType.EXPOSES)
-    edge("portal", "orders_api", EdgeType.CALLS)
-    edge("app_host", "orders_api", EdgeType.HOSTS)
-    edge("web_host", "svc_orders", EdgeType.YIELDS_CREDENTIAL)
-    edge("svc_orders", "app_host", EdgeType.HAS_ACCESS, privilege="user")
-    edge("svc_orders", "customer_db", EdgeType.HAS_ACCESS, privilege="read")
-    edge("app_host", "db_host", EdgeType.PIVOTS_TO)
-    edge("db_host", "customer_db", EdgeType.HOSTS)
-    edge("customer_db", "customer_records", EdgeType.CONTAINS)
-    edge("edr_app", "app_host", EdgeType.PROTECTS, detection=rng.uniform(0.1, 0.4))
-
-    service_names = ["ssh", "smb", "rdp", "dns", "ldap"]
-    for index in range(config.extra_workstations):
-        host_id = f"workstation_{index + 1}"
-        node(
-            host_id,
-            NodeType.HOST,
-            f"Employee workstation {index + 1}",
-            os=rng.choice(["windows", "linux"]),
-            ip=f"10.20.0.{30 + index}",
+    for item in raw["nodes"]:
+        node = EnterpriseNode(
+            id=str(item["id"]),
+            type=NodeType(item["type"]),
+            name=str(item["name"]),
+            attributes=dict(item.get("attributes") or {}),
         )
-        edge(host_id, "seg_app", EdgeType.LOCATED_IN)
+        if node.id in nodes:
+            raise ValueError(f"duplicate reference node: {node.id}")
+        nodes[node.id] = node
 
-    for index in range(config.extra_services):
-        service = rng.choice(service_names)
-        service_id = f"service_{index + 1}_{service}"
-        host_id = rng.choice(["app_host", "db_host", "web_host"])
-        node(
-            service_id,
+    for item in raw["edges"]:
+        attributes = dict(item.get("attributes") or {})
+        bounds = attributes.pop("detection_uniform", None)
+        if bounds is not None:
+            attributes["detection"] = rng.uniform(float(bounds[0]), float(bounds[1]))
+        edges.append(
+            EnterpriseEdge(
+                source=str(item["source"]),
+                target=str(item["target"]),
+                type=EdgeType(item["type"]),
+                attributes=attributes,
+            )
+        )
+
+    extras = raw["extras"]
+    workstation = extras["workstation"]
+    os_pool = world.os_pool(str(workstation["os_pool"]))
+    for offset in range(config.extra_workstations):
+        index = offset + 1
+        node_id = str(workstation["id_template"]).format(index=index)
+        nodes[node_id] = EnterpriseNode(
+            node_id,
+            NodeType(workstation["type"]),
+            str(workstation["name_template"]).format(index=index),
+            {
+                "os": rng.choice(os_pool),
+                "ip": str(workstation["ip_template"]).format(
+                    address=int(workstation["first_address"]) + offset
+                ),
+            },
+        )
+        edges.append(
+            EnterpriseEdge(node_id, str(workstation["segment"]), EdgeType.LOCATED_IN)
+        )
+
+    service_extra = extras["service"]
+    for offset in range(config.extra_services):
+        index = offset + 1
+        service = rng.choice(service_extra["pool"])
+        node_id = str(service_extra["id_template"]).format(
+            index=index, product=service["product"]
+        )
+        nodes[node_id] = EnterpriseNode(
+            node_id,
             NodeType.SERVICE,
-            service.upper(),
-            port={"ssh": 22, "smb": 445, "rdp": 3389, "dns": 53, "ldap": 389}[service],
+            str(service["product"]).upper(),
+            {
+                "port": int(service["port"]),
+            },
         )
-        edge(host_id, service_id, EdgeType.HOSTS)
+        edges.append(
+            EnterpriseEdge(
+                str(rng.choice(service_extra["hosts"])), node_id, EdgeType.HOSTS
+            )
+        )
 
     if config.include_cloud:
-        node("cloud_backup", NodeType.CLOUD_RESOURCE, "Cloud backup", provider="synthetic")
-        edge("customer_db", "cloud_backup", EdgeType.CALLS)
+        cloud = extras["cloud"]
+        node_id = str(cloud["id"])
+        nodes[node_id] = EnterpriseNode(
+            node_id,
+            NodeType(cloud["type"]),
+            str(cloud["name"]),
+            dict(cloud.get("attributes") or {}),
+        )
+        edges.append(
+            EnterpriseEdge(
+                str(cloud["source"]), node_id, EdgeType(cloud["edge_type"])
+            )
+        )
 
-    vulnerabilities = {
-        "CVE-2021-42013": Vulnerability(
-            id="CVE-2021-42013",
-            target="http",
-            cvss=9.8,
-            exploit_probability=1.0,
-            grants_access_to="web_host",
-            affected_product="apache_http_server",
-            affected_versions=("2.4.50",),
-            description="Frozen catalogue analogue for Apache HTTP Server 2.4.50",
-        ),
-        "SYN-APP-PRIV-001": Vulnerability(
-            id="SYN-APP-PRIV-001",
-            target="app_host",
-            cvss=round(rng.uniform(6.0, 8.5), 1),
-            exploit_probability=1.0,
-            grants_access_to="app_host",
-            affected_product="synthetic_linux_host",
-            affected_versions=("1.0",),
-            privilege="root",
-            description="Synthetic local privilege-escalation flaw",
-        ),
-    }
+    vulnerabilities: dict[str, Vulnerability] = {}
+    for item in raw["vulnerabilities"]:
+        bounds = item.get("cvss_uniform")
+        cvss = (
+            round(rng.uniform(float(bounds[0]), float(bounds[1])), 1)
+            if bounds is not None
+            else float(item["cvss"])
+        )
+        vulnerability = Vulnerability(
+            id=str(item["id"]),
+            target=str(item["target"]),
+            cvss=cvss,
+            exploit_probability=float(item["exploit_probability"]),
+            grants_access_to=str(item["grants_access_to"]),
+            affected_product=str(item["affected_product"]),
+            affected_versions=tuple(map(str, item["affected_versions"])),
+            privilege=str(item["privilege"]),
+            description=str(item["description"]),
+        )
+        vulnerabilities[vulnerability.id] = vulnerability
 
     return EnterpriseGraph(
-        name=f"enterprise-seed-{seed}",
+        name=str(raw["name_template"]).format(seed=seed),
         nodes=nodes,
         edges=edges,
         vulnerabilities=vulnerabilities,
-        entry_points=("internet",),
-        crown_jewels=("customer_records",),
+        entry_points=tuple(map(str, raw["entry_points"])),
+        crown_jewels=tuple(map(str, raw["crown_jewels"])),
     )

@@ -11,6 +11,7 @@ from pathlib import Path
 import gymnasium as gym
 import yaml
 
+from rlredteam.catalogues import WorldCatalogue, load_world_catalogue
 from rlredteam.enterprise.environment import EnterpriseActionType, EnterpriseCyberEnv
 from rlredteam.enterprise.model import (
     EdgeType,
@@ -129,9 +130,11 @@ def topology_digest(topology: TrueTopology) -> str:
 def generate_onprem_topology(
     seed: int,
     config: OnPremTopologyConfig | None = None,
+    catalogue: WorldCatalogue | None = None,
 ) -> TrueTopology:
     """Generate a bounded, structurally variable topology with a feasible path."""
     config = config or OnPremTopologyConfig.from_yaml()
+    catalogue = catalogue or load_world_catalogue()
     rng = random.Random(int(seed))
     segment_count = rng.randint(config.min_segments, config.max_segments)
     host_count = rng.randint(config.min_hosts, config.max_hosts)
@@ -162,21 +165,19 @@ def generate_onprem_topology(
     for left, right in zip(segments, segments[1:], strict=False):
         edge(left, right, EdgeType.CONNECTS, filtered=True)
 
-    service_profiles = (
-        ("synthetic_https", "1.0", 443, "SYN-ENTRY-HTTPS"),
-        ("synthetic_ssh", "2.1", 22, "SYN-ENTRY-SSH"),
-        ("synthetic_gateway", "3.0", 8443, "SYN-ENTRY-GATEWAY"),
-    )
-    product, version, port, vulnerability_id = rng.choice(service_profiles)
-    node("host_entry", NodeType.HOST, "Public service host", os="linux")
+    binding = catalogue.generator_bindings["onprem"]
+    service = rng.choice(catalogue.service_pool(str(binding["service_pool"])))
+    if service.vulnerability is None:
+        raise ValueError("entry service catalogue rows require a vulnerability ID")
+    node("host_entry", NodeType.HOST, "Public service host", os=str(binding["entry_os"]))
     node(
         "service_entry",
         NodeType.SERVICE,
         "Externally reachable service",
-        product=product,
-        version=version,
-        port=port,
-        protocol="tcp",
+        product=service.product,
+        version=service.version,
+        port=service.port,
+        protocol=service.protocol,
     )
     edge("host_entry", segments[0], EdgeType.LOCATED_IN)
     edge("host_entry", "service_entry", EdgeType.HOSTS)
@@ -184,7 +185,8 @@ def generate_onprem_topology(
     previous = "service_entry"
     for index in range(application_hops):
         application_id = f"application_{index + 1}"
-        kind = NodeType.APPLICATION if index == 0 else NodeType.API
+        application_index = min(index, len(catalogue.application_types) - 1)
+        kind = NodeType(catalogue.application_types[application_index])
         node(application_id, kind, f"Application component {index + 1}")
         edge(
             previous,
@@ -205,7 +207,12 @@ def generate_onprem_topology(
             if len(segments) == 1
             else segments[1 + (index % (len(segments) - 1))]
         )
-        node(host_id, NodeType.HOST, f"Internal host {index + 1}", os="linux")
+        node(
+            host_id,
+            NodeType.HOST,
+            f"Internal host {index + 1}",
+            os=str(binding["internal_os"]),
+        )
         edge(host_id, segment, EdgeType.LOCATED_IN)
     edge("identity_entry", internal_hosts[0], EdgeType.HAS_ACCESS, privilege="user")
     for source, target in zip(internal_hosts, internal_hosts[1:], strict=False):
@@ -213,12 +220,13 @@ def generate_onprem_topology(
 
     node("identity_data", NodeType.IDENTITY, "Database service identity")
     node("database_crown", NodeType.DATABASE, "Restricted records database")
+    crown = catalogue.crown_jewel(str(binding["crown_jewel_template"]))
     node(
         "asset_crown",
-        NodeType.ASSET,
-        "Restricted business records",
-        classification="restricted",
-        value=100,
+        NodeType(crown.node_type),
+        crown.name,
+        classification=crown.classification,
+        value=crown.value,
     )
     edge("host_data", "identity_data", EdgeType.YIELDS_CREDENTIAL)
     edge("identity_data", "database_crown", EdgeType.HAS_ACCESS, privilege="read")
@@ -228,26 +236,45 @@ def generate_onprem_topology(
     for index in range(decoy_host_count):
         host_id = f"host_decoy_{index + 1}"
         segment = rng.choice(segments)
-        node(host_id, NodeType.HOST, f"Decoy host {index + 1}", os=rng.choice(("linux", "windows")))
+        node(
+            host_id,
+            NodeType.HOST,
+            f"Decoy host {index + 1}",
+            os=rng.choice(catalogue.os_pool(str(binding["decoy_os_pool"]))),
+        )
         edge(host_id, segment, EdgeType.LOCATED_IN)
-    service_names = (("ssh", 22), ("smb", 445), ("dns", 53), ("rdp", 3389))
+    decoy_services = catalogue.service_pool(str(binding["decoy_service_pool"]))
     all_hosts = ["host_entry", *internal_hosts] + [
         f"host_decoy_{index + 1}" for index in range(decoy_host_count)
     ]
     for index in range(decoy_service_count):
-        service, service_port = rng.choice(service_names)
-        service_id = f"service_decoy_{index + 1}_{service}"
-        node(service_id, NodeType.SERVICE, f"Decoy {service.upper()}", port=service_port)
+        decoy = rng.choice(decoy_services)
+        service_id = f"service_decoy_{index + 1}_{decoy.product}"
+        node(
+            service_id,
+            NodeType.SERVICE,
+            f"Decoy {decoy.product.upper()}",
+            port=decoy.port,
+        )
         edge(rng.choice(all_hosts), service_id, EdgeType.HOSTS)
 
     vulnerability = Vulnerability(
-        id=vulnerability_id,
+        id=service.vulnerability,
         target="service_entry",
-        cvss=round(rng.uniform(7.0, 9.8), 1),
-        exploit_probability=1.0,
+        cvss=round(
+            rng.uniform(
+                float(catalogue.vulnerability_defaults["cvss_min"]),
+                float(catalogue.vulnerability_defaults["cvss_max"]),
+            ),
+            1,
+        ),
+        exploit_probability=float(
+            catalogue.vulnerability_defaults["exploit_probability"]
+        ),
         grants_access_to="host_entry",
-        affected_product=product,
-        affected_versions=(version,),
+        affected_product=service.product,
+        affected_versions=(service.version,),
+        privilege=str(catalogue.vulnerability_defaults["privilege"]),
         description="Synthetic entry weakness for the on-prem simulation",
     )
     topology = TrueTopology(

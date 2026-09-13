@@ -24,6 +24,7 @@ from rlredteam.enterprise.onprem import (
     topology_digest,
 )
 from rlredteam.enterprise.trajectory import reconstruct_attack_path
+from rlredteam.frameworks import event_framework_fields
 from rlredteam.provenance import dependency_lock_hash, git_commit, git_dirty
 from rlredteam.train import set_all_seeds
 
@@ -319,6 +320,11 @@ def evaluate_policy(
                         "step": event.step,
                         "action": event.action.name,
                         "action_kind": event.action.type.value,
+                        **event_framework_fields(
+                            rl_action_index=action,
+                            simulator_action=event.action.name,
+                            action_kind=event.action.type.value,
+                        ),
                         "target_entity": event.action.target,
                         "success": event.success,
                         "state_changed": event.state_changed,
@@ -468,6 +474,13 @@ def persist_evaluation(
                             step_idx=int(step["step"]),
                             action_name=str(step["action"]),
                             action_kind=str(step["action_kind"]),
+                            rl_action_index=step.get("rl_action_index"),
+                            simulator_action=str(
+                                step.get("simulator_action") or step["action"]
+                            ),
+                            framework_mappings=list(
+                                step.get("framework_mappings") or []
+                            ),
                             success=bool(step["success"]),
                             reward=float(step["reward"]),
                             native_reward=float(step["reward"]),

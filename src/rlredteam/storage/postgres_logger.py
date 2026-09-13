@@ -17,6 +17,8 @@ from types import TracebackType
 import psycopg
 from psycopg.types.json import Jsonb
 
+from rlredteam.frameworks import event_framework_fields
+
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
@@ -76,6 +78,9 @@ class StepRecord:
     success: bool
     reward: float
     native_reward: float
+    rl_action_index: int | None = None
+    simulator_action: str | None = None
+    framework_mappings: list[dict[str, str]] = field(default_factory=list)
     tactic: str | None = None
     technique_id: str | None = None
     target_subnet: int | None = None
@@ -95,6 +100,16 @@ class StepRecord:
     state_changed: bool = False
     prerequisites: list[str] = field(default_factory=list)
     outcomes: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        fields = event_framework_fields(
+            rl_action_index=self.rl_action_index,
+            simulator_action=self.simulator_action or self.action_name,
+            action_kind=self.action_kind,
+        )
+        self.simulator_action = str(fields["simulator_action"])
+        if not self.framework_mappings:
+            self.framework_mappings = list(fields["framework_mappings"])
 
 
 @dataclass(slots=True)
@@ -332,6 +347,7 @@ class EpisodeLogger:
                         """
                         INSERT INTO steps (
                             episode_id, step_idx, action_name, action_kind,
+                            rl_action_index, simulator_action, framework_mappings,
                             tactic, technique_id, target_subnet, target_host,
                             success, reward, native_reward, cve_id, cvss_base
                             , cve_term, tactic_term, crown_jewel_term, penalty_term,
@@ -340,7 +356,8 @@ class EpisodeLogger:
                             prerequisites, outcomes
                         ) VALUES (
                             %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                            %s,%s,%s
                         )
                         """,
                         [
@@ -349,6 +366,9 @@ class EpisodeLogger:
                                 s.step_idx,
                                 s.action_name,
                                 s.action_kind,
+                                s.rl_action_index,
+                                s.simulator_action,
+                                Jsonb(s.framework_mappings),
                                 s.tactic,
                                 s.technique_id,
                                 s.target_subnet,

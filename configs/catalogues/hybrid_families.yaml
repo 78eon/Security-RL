@@ -1,0 +1,60 @@
+catalogue:
+  version: security-rl-hybrid-families-v1
+  families:
+    legacy_to_cloud:
+      entry_type: legacy_host
+      entry_name: Legacy public portal
+      entry_os: windows-server-2012
+      entry_port: 443
+      entry_protocol: tcp
+      pivot_type: host
+      pivot_name: On-premises identity bridge
+      data_type: cloud_workload
+      data_name: Cloud application workload
+      store_type: storage
+      store_name: Cloud object storage
+      product: apache_http_server
+      version: 2.4.50
+      vulnerability: CVE-2021-42013
+      cvss: 9.8
+      boundary: legacy_to_cloud
+    cloud_to_legacy:
+      entry_type: cloud_workload
+      entry_name: Cloud bastion workload
+      entry_os: ubuntu-22.04
+      entry_port: 22
+      entry_protocol: tcp
+      pivot_type: host
+      pivot_name: Site-to-site VPN connector
+      data_type: legacy_host
+      data_name: Legacy database host
+      store_type: database
+      store_name: Legacy finance database
+      product: openssh
+      version: 9.2p1
+      vulnerability: CVE-2024-6387
+      cvss: 8.1
+      boundary: cloud_to_legacy
+    partner_saas_bridge:
+      entry_type: cloud_workload
+      entry_name: Partner-facing SaaS gateway
+      entry_os: container-linux
+      entry_port: 443
+      entry_protocol: tcp
+      pivot_type: legacy_host
+      pivot_name: Legacy federation server
+      data_type: cloud_workload
+      data_name: Private cloud workload
+      store_type: storage
+      store_name: Private cloud file store
+      product: synthetic_saas_gateway
+      version: '3.2'
+      vulnerability: SYN-SAAS-001
+      cvss: 7.7
+      boundary: partner_to_legacy_to_cloud
+  cloud_network:
+    name: Cloud VPC/VNet
+    cidr: 10.80.0.0/16
+  decoy_os_pool: hybrid_decoy
+  decoy_environments: [legacy, on_premises, cloud]
+  crown_jewel_template: restricted_hybrid_data

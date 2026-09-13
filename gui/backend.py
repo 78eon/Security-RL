@@ -20,6 +20,7 @@ from gui.data.runs import (
     read_episode_csv,
 )
 from gui.data.studies import load_studies
+from rlredteam.frameworks import event_framework_fields
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,6 +72,7 @@ class SimulationData:
     topology_name: str
     nodes: list[dict]
     edges: list[dict]
+    events: list[dict]
     trajectory: list[dict]
     goal_reached: bool
     episode_steps: int
@@ -127,17 +129,13 @@ class ApplicationBackend:
 
     def simulation_profiles(self) -> list[dict]:
         """Return backend-supported simulation profiles, never nearby networks."""
-        from rlredteam.enterprise.profiles import DeploymentProfile
+        from rlredteam.enterprise.profiles import EnterpriseProfileConfig
 
-        labels = {
-            DeploymentProfile.ON_PREMISES: "On-premises",
-            DeploymentProfile.LEGACY: "Legacy estate",
-            DeploymentProfile.CLOUD: "Cloud estate",
-            DeploymentProfile.HYBRID: "Hybrid estate",
-        }
+        config = EnterpriseProfileConfig.from_yaml()
+        identifiers = ["on_premises", *config.profiles]
         return [
-            {"id": profile.value, "label": labels[profile]}
-            for profile in DeploymentProfile
+            {"id": identifier, "label": identifier.replace("_", " ").title()}
+            for identifier in identifiers
         ]
 
     def run_simulation(self, profile: str, topology_seed: int) -> SimulationData:
@@ -149,16 +147,12 @@ class ApplicationBackend:
         """
         from rlredteam.enterprise.environment import EnterpriseCyberEnv
         from rlredteam.enterprise.onprem import knowledge_policy_action, topology_digest
-        from rlredteam.enterprise.profiles import (
-            DeploymentProfile,
-            EnterpriseProfileConfig,
-            generate_profile_topology,
-        )
+        from rlredteam.enterprise.profiles import EnterpriseProfileConfig, generate_profile_topology
         from rlredteam.enterprise.trajectory import reconstruct_attack_path
 
         if isinstance(topology_seed, bool) or not 0 <= int(topology_seed) <= 2_147_483_647:
             raise ValueError("topology seed must be an integer between 0 and 2147483647")
-        selected = DeploymentProfile(profile)
+        selected = str(profile)
         config = EnterpriseProfileConfig.from_yaml()
         topology = generate_profile_topology(selected, int(topology_seed), config)
         env = EnterpriseCyberEnv(
@@ -181,6 +175,11 @@ class ApplicationBackend:
                     "step": event.step,
                     "action": event.action.name,
                     "action_kind": event.action.type.value,
+                    **event_framework_fields(
+                        rl_action_index=action,
+                        simulator_action=event.action.name,
+                        action_kind=event.action.type.value,
+                    ),
                     "target_entity": event.action.target,
                     "target": event.action.target,
                     "success": event.success,
@@ -189,6 +188,25 @@ class ApplicationBackend:
                     "prerequisites": list(event.prerequisites),
                     "outcomes": list(event.outcomes),
                     "goal_reached": event.goal_reached,
+                    "knowledge": {
+                        "nodes": sorted(env.knowledge.discovered),
+                        "edges": [
+                            {
+                                "source": source,
+                                "target": target,
+                                "type": edge_type.value,
+                            }
+                            for source, target, edge_type in sorted(
+                                env.knowledge.known_edges,
+                                key=lambda item: (item[0], item[1], item[2].value),
+                            )
+                        ],
+                        "access": dict(sorted(env.knowledge.access.items())),
+                        "credentials": sorted(env.knowledge.credentials),
+                        "known_vulnerabilities": sorted(
+                            env.knowledge.known_vulnerabilities
+                        ),
+                    },
                 }
             )
         causal = reconstruct_attack_path(rows)
@@ -206,12 +224,13 @@ class ApplicationBackend:
             for edge in topology.edges
         ]
         return SimulationData(
-            profile=selected.value,
+            profile=selected,
             topology_seed=int(topology_seed),
             topology_hash=topology_digest(topology),
             topology_name=topology.name,
             nodes=nodes,
             edges=edges,
+            events=rows,
             trajectory=causal,
             goal_reached=bool(terminated and not truncated),
             episode_steps=len(rows),
@@ -257,8 +276,25 @@ class ApplicationBackend:
                             {
                                 "step": step.step_idx,
                                 "action": step.action_kind,
+                                "rl_action_index": getattr(
+                                    step, "rl_action_index", None
+                                ),
+                                "simulator_action": getattr(
+                                    step, "simulator_action", None
+                                )
+                                or step.action_name,
+                                "framework_mappings": list(
+                                    getattr(step, "framework_mappings", [])
+                                ),
+                                "mapping_persisted": getattr(
+                                    step, "mapping_persisted", False
+                                ),
                                 "target": str(step.target or "environment"),
-                                "outcomes": list(getattr(step, "outcomes", []) or []),
+                                "success": bool(step.success),
+                                "state_changed": bool(step.state_changed),
+                                "outcomes": list(
+                                    getattr(step, "outcomes", []) or []
+                                ),
                             }
                             for step in causal
                         ],

@@ -1,0 +1,6 @@
+protocols:
+  event_envelope: 1
+  enterprise_action_catalogue: 1
+  agent_knowledge_observation: 1
+  postgres_episode_steps: 2
+  framework_mapping_envelope: 1

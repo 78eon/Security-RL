@@ -5,10 +5,13 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
+import yaml
 
+from rlredteam.catalogues import load_world_catalogue
 from rlredteam.enterprise.environment import EnterpriseCyberEnv
 from rlredteam.enterprise.model import (
     EdgeType,
@@ -24,6 +27,34 @@ class HybridFamily(StrEnum):
     LEGACY_TO_CLOUD = "legacy_to_cloud"
     CLOUD_TO_LEGACY = "cloud_to_legacy"
     PARTNER_SAAS_BRIDGE = "partner_saas_bridge"
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_FAMILY_CATALOGUE = REPO_ROOT / "configs/catalogues/hybrid_families.yaml"
+
+
+def _load_family_catalogue(path: Path | None = None) -> dict[str, Any]:
+    selected = path or DEFAULT_FAMILY_CATALOGUE
+    raw = yaml.safe_load(selected.read_text())
+    if not isinstance(raw, dict) or not isinstance(raw.get("catalogue"), dict):
+        raise ValueError("hybrid family catalogue root is missing")
+    catalogue = raw["catalogue"]
+    if catalogue.get("version") != "security-rl-hybrid-families-v1":
+        raise ValueError("unsupported hybrid family catalogue version")
+    families = catalogue.get("families")
+    if not isinstance(families, dict) or set(families) != {item.value for item in HybridFamily}:
+        raise ValueError("hybrid family catalogue must define every family exactly once")
+    required = {
+        "entry_type", "entry_name", "entry_os", "entry_port", "entry_protocol",
+        "pivot_type", "pivot_name", "data_type", "data_name", "store_type",
+        "store_name", "product", "version", "vulnerability", "cvss", "boundary",
+    }
+    for name, family in families.items():
+        if not isinstance(family, dict) or not required <= set(family):
+            raise ValueError(f"incomplete hybrid family: {name}")
+        if not 1 <= int(family["entry_port"]) <= 65535:
+            raise ValueError(f"invalid hybrid entry port: {name}")
+    return catalogue
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +95,13 @@ def generate_hybrid_enterprise(
     *,
     family: HybridFamily | str | None = None,
     config: HybridGeneratorConfig | None = None,
+    family_catalogue_path: Path | None = None,
 ) -> EnterpriseGraph:
     """Generate one hybrid graph from a structurally distinct family."""
     config = config or HybridGeneratorConfig()
     selected = HybridFamily(family) if family is not None else family_for_seed(seed)
+    family_catalogue = _load_family_catalogue(family_catalogue_path)
+    world_catalogue = load_world_catalogue()
     rng = random.Random(seed)
     nodes: dict[str, EnterpriseNode] = {}
     edges: list[EnterpriseEdge] = []
@@ -78,79 +112,38 @@ def generate_hybrid_enterprise(
     def edge(source: str, target: str, kind: EdgeType, **attributes: Any) -> None:
         edges.append(EnterpriseEdge(source, target, kind, attributes))
 
-    family_details = {
-        HybridFamily.LEGACY_TO_CLOUD: {
-            "entry_type": NodeType.LEGACY_HOST,
-            "entry_name": "Legacy public portal",
-            "entry_os": "windows-server-2012",
-            "pivot_type": NodeType.HOST,
-            "pivot_name": "On-premises identity bridge",
-            "data_type": NodeType.CLOUD_WORKLOAD,
-            "data_name": "Cloud application workload",
-            "store_type": NodeType.STORAGE,
-            "store_name": "Cloud object storage",
-            "product": "apache_http_server",
-            "version": "2.4.50",
-            "vuln": "CVE-2021-42013",
-            "cvss": 9.8,
-            "boundary": "legacy_to_cloud",
-        },
-        HybridFamily.CLOUD_TO_LEGACY: {
-            "entry_type": NodeType.CLOUD_WORKLOAD,
-            "entry_name": "Cloud bastion workload",
-            "entry_os": "ubuntu-22.04",
-            "pivot_type": NodeType.HOST,
-            "pivot_name": "Site-to-site VPN connector",
-            "data_type": NodeType.LEGACY_HOST,
-            "data_name": "Legacy database host",
-            "store_type": NodeType.DATABASE,
-            "store_name": "Legacy finance database",
-            "product": "openssh",
-            "version": "9.2p1",
-            "vuln": "CVE-2024-6387",
-            "cvss": 8.1,
-            "boundary": "cloud_to_legacy",
-        },
-        HybridFamily.PARTNER_SAAS_BRIDGE: {
-            "entry_type": NodeType.CLOUD_WORKLOAD,
-            "entry_name": "Partner-facing SaaS gateway",
-            "entry_os": "container-linux",
-            "pivot_type": NodeType.LEGACY_HOST,
-            "pivot_name": "Legacy federation server",
-            "data_type": NodeType.CLOUD_WORKLOAD,
-            "data_name": "Private cloud workload",
-            "store_type": NodeType.STORAGE,
-            "store_name": "Private cloud file store",
-            "product": "synthetic_saas_gateway",
-            "version": "3.2",
-            "vuln": "SYN-SAAS-001",
-            "cvss": 7.7,
-            "boundary": "partner_to_legacy_to_cloud",
-        },
-    }[selected]
+    family_details = family_catalogue["families"][selected.value]
+    entry_type = NodeType(family_details["entry_type"])
+    pivot_type = NodeType(family_details["pivot_type"])
+    data_type = NodeType(family_details["data_type"])
 
     node("entry_internet", NodeType.ENTRY_POINT, "Internet / partner entry")
     node("network_edge", NodeType.NETWORK_SEGMENT, "External services zone")
     node("network_legacy", NodeType.NETWORK_SEGMENT, "Legacy on-premises zone")
-    node("network_cloud", NodeType.CLOUD_NETWORK, "Cloud VPC/VNet", cidr="10.80.0.0/16")
+    node(
+        "network_cloud",
+        NodeType.CLOUD_NETWORK,
+        str(family_catalogue["cloud_network"]["name"]),
+        cidr=str(family_catalogue["cloud_network"]["cidr"]),
+    )
     node("control_edge", NodeType.SECURITY_CONTROL, "Edge firewall/WAF", control="waf")
     node("control_cloud", NodeType.SECURITY_CONTROL, "Cloud security group", control="sg")
     node("cloud_account", NodeType.CLOUD_ACCOUNT, "Enterprise cloud account", tenant="synthetic")
     node("identity_provider", NodeType.IDENTITY_PROVIDER, "Hybrid identity provider")
     node(
         "host_entry",
-        family_details["entry_type"],
+        entry_type,
         family_details["entry_name"],
         os=family_details["entry_os"],
         environment="cloud"
-        if family_details["entry_type"] == NodeType.CLOUD_WORKLOAD
+        if entry_type == NodeType.CLOUD_WORKLOAD
         else "legacy",
     )
     node(
         "service_entry",
         NodeType.SERVICE,
         "Externally reachable service",
-        port=443 if selected != HybridFamily.CLOUD_TO_LEGACY else 22,
+        port=int(family_details["entry_port"]),
         product=family_details["product"],
         version=family_details["version"],
     )
@@ -160,25 +153,30 @@ def generate_hybrid_enterprise(
     node("iam_role", NodeType.IAM_ROLE, "Cloud workload role", privilege="application")
     node(
         "host_pivot",
-        family_details["pivot_type"],
+        pivot_type,
         family_details["pivot_name"],
         environment="hybrid_bridge",
     )
     node(
         "host_data",
-        family_details["data_type"],
+        data_type,
         family_details["data_name"],
         environment="cloud"
-        if family_details["data_type"] == NodeType.CLOUD_WORKLOAD
+        if data_type == NodeType.CLOUD_WORKLOAD
         else "legacy",
     )
-    node("storage_target", family_details["store_type"], family_details["store_name"])
+    node(
+        "storage_target",
+        NodeType(family_details["store_type"]),
+        family_details["store_name"],
+    )
+    crown = world_catalogue.crown_jewel(family_catalogue["crown_jewel_template"])
     node(
         "asset_crown",
-        NodeType.ASSET,
-        "Restricted hybrid business data",
-        classification="restricted",
-        value=100,
+        NodeType(crown.node_type),
+        crown.name,
+        classification=crown.classification,
+        value=crown.value,
     )
 
     edge("entry_internet", "network_edge", EdgeType.CONNECTS)
@@ -218,20 +216,25 @@ def generate_hybrid_enterprise(
             decoy_id,
             decoy_type,
             f"Decoy workload {index + 1}",
-            os=rng.choice(["windows-2008", "linux", "container-linux"]),
-            environment=rng.choice(["legacy", "on_premises", "cloud"]),
+            os=rng.choice(
+                world_catalogue.os_pool(str(family_catalogue["decoy_os_pool"]))
+            ),
+            environment=rng.choice(family_catalogue["decoy_environments"]),
         )
         zone = "network_cloud" if decoy_type == NodeType.CLOUD_WORKLOAD else "network_legacy"
         edge(decoy_id, zone, EdgeType.LOCATED_IN)
 
     vulnerability = Vulnerability(
-        id=str(family_details["vuln"]),
+        id=str(family_details["vulnerability"]),
         target="service_entry",
         cvss=float(family_details["cvss"]),
-        exploit_probability=1.0,
+        exploit_probability=float(
+            world_catalogue.vulnerability_defaults["exploit_probability"]
+        ),
         grants_access_to="host_entry",
         affected_product=str(family_details["product"]),
         affected_versions=(str(family_details["version"]),),
+        privilege=str(world_catalogue.vulnerability_defaults["privilege"]),
         description=f"Applicable entry weakness for {selected.value}",
     )
     return EnterpriseGraph(

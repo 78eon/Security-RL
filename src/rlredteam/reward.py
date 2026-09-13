@@ -23,6 +23,7 @@ import yaml
 
 from rlredteam.cvss import WeightMode, WeightParams, severity_weight
 from rlredteam.events import AccessLevel, ActionKind, AttackEvent
+from rlredteam.frameworks import map_simulator_behavior
 
 
 class RewardMode(StrEnum):
@@ -55,12 +56,9 @@ _KIND_TO_TACTIC: dict[ActionKind, str] = {
 # MITRE ATT&CK technique per action kind. Recorded on every scored event so the
 # Important-tier mapper has its data from day one; not yet used in the reward.
 KIND_TO_TECHNIQUE: dict[ActionKind, str] = {
-    ActionKind.SERVICE_SCAN: "T1046",  # Network Service Discovery
-    ActionKind.OS_SCAN: "T1082",  # System Information Discovery
-    ActionKind.SUBNET_SCAN: "T1018",  # Remote System Discovery
-    ActionKind.PROCESS_SCAN: "T1057",  # Process Discovery
-    ActionKind.EXPLOIT: "T1210",  # Exploitation of Remote Services
-    ActionKind.PRIVESC: "T1068",  # Exploitation for Privilege Escalation
+    kind: mappings[0].technique_id
+    for kind in ActionKind
+    if (mappings := map_simulator_behavior(kind.value))
 }
 
 

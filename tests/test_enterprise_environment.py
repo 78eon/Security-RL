@@ -164,6 +164,20 @@ def test_discovery_reveals_information_incrementally() -> None:
     assert "portal" in env.knowledge.discovered
 
 
+def test_event_keeps_rl_index_distinct_from_resolved_simulator_action() -> None:
+    env = EnterpriseCyberEnv(generate_enterprise(42))
+    env.reset(seed=42)
+    action_index = env.action_index(EnterpriseActionType.DISCOVER_NETWORK, "seg_dmz")
+
+    *_, info = env.step(action_index)
+    event = info["event"]
+
+    assert event.rl_action_index == action_index
+    assert event.action.type is EnterpriseActionType.DISCOVER_NETWORK
+    assert event.action.target == "seg_dmz"
+    assert event.action.name == "discover_network:seg_dmz"
+
+
 def test_invalid_action_is_penalised_without_changing_knowledge() -> None:
     env = EnterpriseCyberEnv(generate_enterprise(42))
     env.reset(seed=42)

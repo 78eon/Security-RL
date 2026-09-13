@@ -262,6 +262,7 @@ class EpisodeCollector(BaseCallback):
                 step_idx=idx,
                 action_name=event.action_name,
                 action_kind=str(event.kind),
+                rl_action_index=event.rl_action_index,
                 tactic=breakdown.tactic_name,
                 technique_id=breakdown.technique_id,
                 target_subnet=event.target[0] if event.target else None,

@@ -43,6 +43,7 @@ from rlredteam.enterprise.multiagent import (
 from rlredteam.enterprise.onprem import OnPremGeneralisationSplit
 from rlredteam.enterprise.profiles import EnterpriseProfileConfig
 from rlredteam.enterprise.recurrent import KnowledgeActionGuard
+from rlredteam.frameworks import event_framework_fields
 from rlredteam.train import set_all_seeds
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -753,6 +754,11 @@ def evaluate_red_policy(
                             "step": event.step,
                             "action": event.action.name,
                             "action_kind": event.action.type.value,
+                            **event_framework_fields(
+                                rl_action_index=selected,
+                                simulator_action=event.action.name,
+                                action_kind=event.action.type.value,
+                            ),
                             "target_entity": event.action.target,
                             "success": event.success,
                             "state_changed": event.state_changed,

@@ -13,6 +13,7 @@ from gui.backend import CampaignData, DashboardData, SimulationData  # noqa: E40
 from gui.data.models import StudyMetric, StudySummary  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
 from gui.views.research_console import SimulationPage, TrajectoryGraph  # noqa: E402
+from rlredteam.frameworks import event_framework_fields  # noqa: E402
 
 
 class FakeBackend:
@@ -39,6 +40,55 @@ class FakeBackend:
 
 
 def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationData:
+    knowledge_states = [
+        {
+            "nodes": ["entry"],
+            "edges": [],
+            "access": {},
+            "credentials": [],
+            "known_vulnerabilities": [],
+        },
+        {
+            "nodes": ["entry", "host"],
+            "edges": [{"source": "entry", "target": "host", "type": "connects"}],
+            "access": {"host": "user"},
+            "credentials": [],
+            "known_vulnerabilities": [],
+        },
+        {
+            "nodes": ["entry", "host", "asset"],
+            "edges": [
+                {"source": "entry", "target": "host", "type": "connects"},
+                {"source": "host", "target": "asset", "type": "contains"},
+            ],
+            "access": {"host": "user", "asset": "read"},
+            "credentials": [],
+            "known_vulnerabilities": [],
+        },
+    ]
+    actions = [
+        ("discover:entry", "discover_network", "entry"),
+        ("pivot:host", "pivot", "host"),
+        ("access_asset:asset", "access_asset", "asset"),
+    ]
+    events = [
+        {
+            "step": index,
+            "action": action,
+            "action_kind": kind,
+            "target": target,
+            "target_entity": target,
+            "success": True,
+            "state_changed": True,
+            "knowledge": knowledge_states[index],
+            **event_framework_fields(
+                rl_action_index=index,
+                simulator_action=action,
+                action_kind=kind,
+            ),
+        }
+        for index, (action, kind, target) in enumerate(actions)
+    ]
     return SimulationData(
         profile=profile,
         topology_seed=seed,
@@ -53,26 +103,8 @@ def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationDa
             {"source": "entry", "target": "host", "type": "connects"},
             {"source": "host", "target": "asset", "type": "contains"},
         ],
-        trajectory=[
-            {
-                "step": 0,
-                "action": "discover:entry",
-                "action_kind": "discover_network",
-                "target": "entry",
-            },
-            {
-                "step": 1,
-                "action": "pivot:host",
-                "action_kind": "pivot",
-                "target": "host",
-            },
-            {
-                "step": 2,
-                "action": "access_asset:asset",
-                "action_kind": "access_asset",
-                "target": "asset",
-            }
-        ],
+        events=events,
+        trajectory=events,
         goal_reached=True,
         episode_steps=10,
         total_reward=100.0,
@@ -106,14 +138,15 @@ def test_simulation_page_renders_backend_result_without_hardcoded_profile() -> N
     app.processEvents()
 
     assert page.profile.currentData() == "hybrid"
-    assert page.nodes.rowCount() == 3
-    assert page.graph.node_count == 3
-    assert page.graph.edge_count == 2
-    assert page.graph.highlighted_entities == {"entry", "host", "asset"}
-    assert page.graph.final_entity == "asset"
+    assert page.truth_graph.node_count == 3
+    assert page.truth_graph.edge_count == 2
+    assert page.knowledge_graph.node_count == 3
+    assert page.knowledge_graph.edge_count == 2
+    assert page.navigator.attack.active_techniques == {"T1018", "T1021", "T1005"}
+    assert page.navigator.atlas.active_techniques == set()
     entry_labels = [
         item
-        for item in page.graph.graph_scene.items()
+        for item in page.knowledge_graph.graph_scene.items()
         if isinstance(item, QGraphicsSimpleTextItem) and item.text() == "entry"
     ]
     assert len(entry_labels) == 1
@@ -122,12 +155,16 @@ def test_simulation_page_renders_backend_result_without_hardcoded_profile() -> N
     assert page.outcome.value.text() == "GOAL REACHED"
     assert page.replay_button.isEnabled()
     page.replay_button.click()
-    assert page.graph.replay_index == 1
-    assert page.graph.highlighted_entities == {"entry"}
-    page.graph._advance_replay()
-    page.graph._advance_replay()
-    assert page.graph.highlighted_entities == {"entry", "host", "asset"}
-    assert not page.graph.replay_timer.isActive()
+    assert page.timeline.value() == 0
+    assert page.knowledge_graph.node_count == 0
+    page._advance_replay()
+    assert page.knowledge_graph.node_count == 1
+    assert page.navigator.attack.active_techniques == {"T1018"}
+    page._advance_replay()
+    page._advance_replay()
+    assert page.knowledge_graph.node_count == 3
+    assert page.navigator.attack.active_techniques == {"T1018", "T1021", "T1005"}
+    assert not page.replay_timer.isActive()
     page.close()
 
 
