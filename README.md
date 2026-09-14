@@ -207,6 +207,22 @@ make phase19-verify   # deterministic, PostgreSQL and headless PySide6 checks
 make gui              # inspect Attack Path and Knowledge Flow tabs
 ```
 
+## Neo4j derived graph analysis
+
+Phase 20 projects only PostgreSQL-authoritative Phase 19 node, edge and
+knowledge-evidence facts into a rebuildable Neo4j service. The projection is
+graph-ID scoped, every relationship retains evidence references, and no hidden
+topology is accepted. Neo4j is optional and never replaces PostgreSQL or the
+canonical JSON/CSV evidence.
+
+Add a distinct strong `NEO4J_PASSWORD` to `.env`, then run:
+
+```bash
+make neo4j-export    # rebuild Neo4j from the latest PostgreSQL causal graph
+make neo4j-analyze   # path, bottleneck, centrality and MITRE analyses
+make neo4j-verify    # idempotence, source integrity and live Podman checks
+```
+
 ## Reproducing the environment
 
 ```bash

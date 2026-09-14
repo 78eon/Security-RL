@@ -1,0 +1,30 @@
+# Phase 20 overlay. Keeping the optional service separate prevents Neo4j from
+# becoming a dependency of training or canonical PostgreSQL evidence.
+services:
+  neo4j:
+    image: docker.io/library/neo4j:5.26.0-community
+    # Bypass the root/chown entrypoint path so cap_drop=ALL remains viable.
+    user: "7474:7474"
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:?set NEO4J_USER in .env}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4jdata:/data
+    networks: [rlredteam-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 1g
+    stop_grace_period: 30s
+volumes:
+  neo4jdata:

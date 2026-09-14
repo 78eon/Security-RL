@@ -1,5 +1,7 @@
 .PHONY: help build gui gui-build gui-test phase19-report phase19-verify reward-components-freeze reward-components-dry-run reward-components-run reward-components-verify cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
+.PHONY: neo4j-build neo4j-up neo4j-down neo4j-export neo4j-analyze neo4j-verify
+
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 # The container has only a partial checkout, so dirtiness is decided here.
@@ -7,6 +9,24 @@ export RLREDTEAM_GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/
 
 # Podman is the sole supported container runtime for this project.
 COMPOSE := podman compose
+NEO4J_COMPOSE := podman compose -f docker-compose.yml -f docker-compose.neo4j.yml
+NEO4J_CLIENT_IMAGE := localhost/security-rl-neo4j-client:latest
+NEO4J_RUN := podman run --rm --network sourcecode_rlredteam-internal \
+	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
+	-e PYTHONHASHSEED=0 -e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
+	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+	-e NEO4J_URI=bolt://neo4j:7687 -e NEO4J_USER -e NEO4J_PASSWORD \
+	-e NEO4J_DATABASE -v "$(CURDIR)/src:/app/src:ro,z" \
+	-v "$(CURDIR)/tests:/app/tests:ro,z" \
+	-v "$(CURDIR)/scripts:/app/scripts:ro,z" \
+	-v "$(CURDIR)/configs:/app/configs:ro,z" \
+	-v "$(CURDIR)/data:/app/data:ro,z" \
+	-v "$(CURDIR)/.git:/app/.git:ro,z" \
+	-v "$(CURDIR)/docker-compose.yml:/app/docker-compose.yml:ro,z" \
+	-v "$(CURDIR)/docker-compose.neo4j.yml:/app/docker-compose.neo4j.yml:ro,z" \
+	-v "$(CURDIR)/Dockerfile.neo4j:/app/Dockerfile.neo4j:ro,z" \
+	-v "$(CURDIR)/pyproject.toml:/app/pyproject.toml:ro,z" \
+	-v "$(CURDIR)/results:/app/results:rw,z" -w /app $(NEO4J_CLIENT_IMAGE)
 CYBERBATTLE_IMAGE := localhost/security-rl-cyberbattle:latest
 CYBERBATTLE_RUN := podman run --rm --network none --cap-drop=all \
 	--security-opt=no-new-privileges --user 0:0 \
@@ -220,6 +240,28 @@ phase19-verify: ## Verify Phase 19 causality, UI behavior and PostgreSQL reconst
 	podman run --rm -e QT_QPA_PLATFORM=offscreen \
 		-v "$(CURDIR):/app:ro,z" -w /app rlredteam-gui \
 		python -m pytest -q -p no:cacheprovider tests/test_gui_causal_graph.py
+
+neo4j-build: ## Build the pinned Neo4j-client application image
+	podman image exists localhost/sourcecode_app:latest || $(COMPOSE) build app
+	podman build -t $(NEO4J_CLIENT_IMAGE) -f Dockerfile.neo4j .
+
+neo4j-up: neo4j-build ## Start the optional loopback-only derived graph service
+	$(NEO4J_COMPOSE) up -d postgres neo4j
+
+neo4j-down: ## Stop Phase 20 services without deleting graph/database volumes
+	$(NEO4J_COMPOSE) down
+
+neo4j-export: neo4j-up ## Rebuild a selected Neo4j projection from PostgreSQL
+	set -a; . ./.env; set +a; $(NEO4J_RUN) python scripts/export_neo4j_projection.py
+
+neo4j-analyze: neo4j-up ## Run graph-scoped derived analysis queries
+	set -a; . ./.env; set +a; $(NEO4J_RUN) python scripts/analyze_neo4j_projection.py
+
+neo4j-verify: neo4j-up ## Verify source integrity, projection and analysis end to end
+	set -a; . ./.env; set +a; $(NEO4J_RUN) pytest -q -p no:cacheprovider \
+		tests/test_neo4j_projection.py tests/test_neo4j_security.py \
+		tests/test_neo4j_integration.py
+	set -a; . ./.env; set +a; $(NEO4J_RUN) python scripts/verify_neo4j_completion.py
 
 lab-build:      ## Build the unprivileged isolated-range discovery image
 	podman build -t rlredteam-lab -f Dockerfile.lab .

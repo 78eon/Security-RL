@@ -1,0 +1,7 @@
+# Phase 20 client image. The canonical training image and pyproject dependency
+# lock remain untouched so previously frozen experiments stay reconstructible.
+FROM localhost/sourcecode_app:latest
+
+USER root
+RUN pip install --no-cache-dir neo4j==5.28.5
+USER 10001:10001
