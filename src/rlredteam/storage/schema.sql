@@ -182,3 +182,31 @@ CREATE INDEX IF NOT EXISTS idx_attack_path_reports_experiment
     ON attack_path_reports (experiment_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attack_path_report_facts_episode
     ON attack_path_report_facts (report_id, episode_key);
+
+-- Phase 15 derived counterfactual evaluation. These tables never update the
+-- Phase 14 report or the raw training/evaluation episode tables.
+CREATE TABLE IF NOT EXISTS mitigation_counterfactual_reports (
+    report_id                  TEXT PRIMARY KEY,
+    selected_cve               TEXT NOT NULL,
+    intervention_version       TEXT NOT NULL,
+    intervention_sha256        TEXT NOT NULL CHECK (length(intervention_sha256) = 64),
+    checkpoint_sha256          TEXT NOT NULL CHECK (length(checkpoint_sha256) = 64),
+    source_attack_report_id    TEXT,
+    evaluation_seeds           INTEGER[] NOT NULL,
+    report_schema_version      TEXT NOT NULL,
+    report_data                JSONB NOT NULL,
+    created_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mitigation_counterfactual_pairs (
+    report_id       TEXT NOT NULL
+        REFERENCES mitigation_counterfactual_reports(report_id) ON DELETE CASCADE,
+    evaluation_seed INTEGER NOT NULL,
+    original_data   JSONB NOT NULL,
+    mitigated_data  JSONB NOT NULL,
+    delta_data      JSONB NOT NULL,
+    PRIMARY KEY (report_id, evaluation_seed)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mitigation_reports_cve
+    ON mitigation_counterfactual_reports (selected_cve, created_at DESC);

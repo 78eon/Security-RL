@@ -103,6 +103,7 @@ class DashboardData:
     database_label: str = "Not configured"
     studies: list[StudySummary] = field(default_factory=list)
     attack_path_reports: list[dict] = field(default_factory=list)
+    mitigation_reports: list[dict] = field(default_factory=list)
 
 
 class BackendPort(Protocol):
@@ -111,6 +112,7 @@ class BackendPort(Protocol):
     def simulation_profiles(self) -> list[dict]: ...
     def run_simulation(self, profile: str, topology_seed: int) -> SimulationData: ...
     def refresh_attack_path_reports(self) -> list[dict]: ...
+    def refresh_mitigation_reports(self) -> list[dict]: ...
     def export_report(self) -> str: ...
 
 
@@ -310,16 +312,23 @@ class ApplicationBackend:
         loader = getattr(self.repository, "attack_path_reports", None)
         return list(loader()) if loader is not None else []
 
+    def refresh_mitigation_reports(self) -> list[dict]:
+        """Load persisted Phase 15 comparisons; evaluation never runs in the GUI."""
+        loader = getattr(self.repository, "mitigation_counterfactual_reports", None)
+        return list(loader()) if loader is not None else []
+
     def load_dashboard(self) -> DashboardData:
         folders = [name for name in list_run_folders() if not name.startswith("_")]
         folders.sort(key=lambda name: (RUNS_DIR / name).stat().st_mtime, reverse=True)
         artifact_campaigns = self._campaigns(folders)
-        db_runs, latest_episodes, db_steps, paths, attack_path_reports = [], [], [], [], []
+        db_runs, latest_episodes, db_steps, paths = [], [], [], []
+        attack_path_reports, mitigation_reports = [], []
         status = "PostgreSQL connected"
         try:
             db_runs = self.repository.list_runs()
             paths = self.refresh_paths()
             attack_path_reports = self.refresh_attack_path_reports()
+            mitigation_reports = self.refresh_mitigation_reports()
             if db_runs:
                 latest_episodes = self.repository.episodes([db_runs[0].experiment_id])
                 replayable = self.repository.replayable_episodes(db_runs[0].experiment_id)
@@ -385,6 +394,7 @@ class ApplicationBackend:
             database_label=database_label,
             studies=studies,
             attack_path_reports=attack_path_reports,
+            mitigation_reports=mitigation_reports,
         )
 
     @staticmethod

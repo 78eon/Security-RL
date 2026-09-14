@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test phase14-report phase14-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -102,6 +102,20 @@ phase14-report: ## Generate and persist deterministic explainable attack-path re
 phase14-verify: ## Test and reconstruct Phase 14 report from source + PostgreSQL
 	$(COMPOSE) up -d postgres
 	$(COMPOSE) run --rm app python scripts/verify_phase14_completion.py --postgres
+
+phase15-report: ## Paired frozen-policy evaluation with one path-critical CVE disabled
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/run_mitigation_counterfactual.py \
+		--run runs/experiment_01-shaped-s42-t42 \
+		--seeds 1001 1002 1003 1004 1005 1006 1007 1008 1009 1010 \
+		--cve CVE-2024-6387 \
+		--phase14-report results/phase14/experiment_01_attack_path_report.json \
+		--protect results/experiment_01 \
+		--out results/phase15/experiment_01_mitigation.json --postgres
+
+phase15-verify: ## Verify Phase 15 pairing, policy/artifact immutability and PostgreSQL
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/verify_phase15_completion.py --postgres
 
 lab-build:      ## Build the unprivileged isolated-range discovery image
 	podman build -t rlredteam-lab -f Dockerfile.lab .

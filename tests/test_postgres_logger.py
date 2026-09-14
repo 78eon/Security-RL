@@ -12,6 +12,7 @@ psycopg = pytest.importorskip("psycopg")
 
 from gui.data.repository import Repository  # noqa: E402
 from rlredteam.attack_path_report import build_report  # noqa: E402
+from rlredteam.storage.mitigation_store import MitigationStore  # noqa: E402
 from rlredteam.storage.postgres_logger import (  # noqa: E402
     EpisodeLogger,
     EpisodeRecord,
@@ -20,6 +21,7 @@ from rlredteam.storage.postgres_logger import (  # noqa: E402
     ensure_schema,
 )
 from rlredteam.storage.report_store import ReportStore  # noqa: E402
+from tests.test_mitigation import make_mitigation_report  # noqa: E402
 
 pytestmark = pytest.mark.postgres
 
@@ -373,6 +375,41 @@ def test_evaluation_run_attaches_to_training_experiment(
     assert rows[0][:5] == ("training", "running", [], 42, "goal")
     assert rows[1][:5] == ("evaluation", "complete", [1001], 1001, "goal")
     assert rows[1][5] == 3
+
+
+def test_phase15_report_round_trips_without_mutating_raw_or_phase14_tables(
+    conninfo: str,
+) -> None:
+    report = make_mitigation_report()
+    with psycopg.connect(conninfo) as conn:
+        ensure_schema(conn)
+        before = conn.execute(
+            "SELECT (SELECT count(*) FROM episodes), (SELECT count(*) FROM steps), "
+            "(SELECT count(*) FROM attack_path_reports)"
+        ).fetchone()
+        store = MitigationStore(conn)
+        assert store.save(report) == report["report_id"]
+        assert store.save(report) == report["report_id"]
+        reconstructed = store.load(report["report_id"])
+        pair_count = conn.execute(
+            "SELECT count(*) FROM mitigation_counterfactual_pairs WHERE report_id=%s",
+            (report["report_id"],),
+        ).fetchone()[0]
+        gui_reports = Repository().mitigation_counterfactual_reports()
+        after = conn.execute(
+            "SELECT (SELECT count(*) FROM episodes), (SELECT count(*) FROM steps), "
+            "(SELECT count(*) FROM attack_path_reports)"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM mitigation_counterfactual_reports WHERE report_id=%s",
+            (report["report_id"],),
+        )
+        conn.commit()
+
+    assert reconstructed == report
+    assert pair_count == len(report["pairs"])
+    assert any(item["report_id"] == report["report_id"] for item in gui_reports)
+    assert before == after
 
 
 def test_batching_defers_writes_until_threshold(logger: EpisodeLogger) -> None:

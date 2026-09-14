@@ -867,6 +867,168 @@ def _fact_event(fact: dict) -> dict:
     }
 
 
+class MitigationComparisonPage(Page):
+    """Render persisted paired reruns without performing evaluation in Qt."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "PHASE 15 · FROZEN-POLICY RERUNS",
+            "Mitigation counterfactual comparison",
+            "Observed path criticality is trace-derived. Mitigation effect is measured "
+            "separately by paired reruns with one CVE disabled.",
+        )
+        selector = panel(QHBoxLayout())
+        selector.layout().addWidget(label("Counterfactual report", "FieldLabel"))
+        self.selector = QComboBox()
+        self.selector.setMinimumWidth(430)
+        self.selector.currentIndexChanged.connect(self._selected)
+        selector.layout().addWidget(self.selector)
+        selector.layout().addStretch()
+        self.cve = label("NO STORED REPORT", "StateLabel")
+        selector.layout().addWidget(self.cve)
+        self.root.addWidget(selector)
+
+        metrics = QHBoxLayout()
+        self.original = Metric("ORIGINAL SUCCESS")
+        self.mitigated = Metric("MITIGATED SUCCESS")
+        self.change = Metric("ABSOLUTE CHANGE")
+        self.significance = Metric("PAIRED EXACT P")
+        for item in (self.original, self.mitigated, self.change, self.significance):
+            metrics.addWidget(item)
+        self.root.addLayout(metrics)
+
+        comparison = panel(QVBoxLayout())
+        comparison.layout().addWidget(label("IDENTICAL-SEED OUTCOME PAIRS", "SectionTitle"))
+        self.table = QTableWidget(0, 10)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Seed",
+                "Original success",
+                "Mitigated success",
+                "Original steps",
+                "Mitigated steps",
+                "Original reward",
+                "Mitigated reward",
+                "Original crown",
+                "Mitigated crown",
+                "Blocked attempts",
+            ]
+        )
+        configure_table(self.table, stretch_column=0)
+        comparison.layout().addWidget(self.table)
+        self.root.addWidget(comparison)
+
+        paths = panel(QVBoxLayout())
+        paths.layout().addWidget(label("MITRE / PATH COMPARISON", "SectionTitle"))
+        self.paths = QTableWidget(0, 5)
+        self.paths.setHorizontalHeaderLabels(
+            [
+                "Seed",
+                "Original techniques",
+                "Mitigated techniques",
+                "Original path",
+                "Mitigated path",
+            ]
+        )
+        configure_table(self.paths, stretch_column=1)
+        paths.layout().addWidget(self.paths)
+        self.root.addWidget(paths)
+        self.provenance = label("", "MonoDetail", wrap=True)
+        self.root.addWidget(self.provenance)
+        self.reports: list[dict] = []
+
+    def apply(self, data: DashboardData) -> None:
+        self.reports = list(data.mitigation_reports)
+        self.selector.blockSignals(True)
+        self.selector.clear()
+        for report in self.reports:
+            intervention = report.get("intervention") or {}
+            self.selector.addItem(
+                f"{intervention.get('selected_cve', 'unknown')} · "
+                f"{str(report.get('report_id', ''))[:12]}",
+                report.get("report_id"),
+            )
+        self.selector.blockSignals(False)
+        self._selected(0)
+
+    def _selected(self, index: int) -> None:
+        if not 0 <= index < len(self.reports):
+            self.cve.setText("NO STORED REPORT")
+            fill_table(self.table, [])
+            fill_table(self.paths, [])
+            self.provenance.clear()
+            return
+        report = self.reports[index]
+        intervention = report.get("intervention") or {}
+        analysis = report.get("analysis") or {}
+        pairs = list(report.get("pairs") or [])
+        self.cve.setText(str(intervention.get("selected_cve", "UNKNOWN")))
+        self.original.update_value(
+            percent(analysis.get("original_success_rate")), "Frozen policy · original environment"
+        )
+        self.mitigated.update_value(
+            percent(analysis.get("mitigated_success_rate")), "Same policy and episode seeds"
+        )
+        self.change.update_value(
+            percent(analysis.get("absolute_success_rate_change")), "Mitigated minus original"
+        )
+        exact = analysis.get("mcnemar_exact") or {}
+        p_value = exact.get("p_value")
+        self.significance.update_value(
+            "—" if p_value is None else f"{float(p_value):.4f}",
+            f"{exact.get('discordant_pairs', 0)} discordant pairs",
+        )
+        fill_table(
+            self.table,
+            [
+                (
+                    pair.get("evaluation_seed"),
+                    "YES" if pair["original"].get("success") else "NO",
+                    "YES" if pair["mitigated"].get("success") else "NO",
+                    pair["original"].get("steps"),
+                    pair["mitigated"].get("steps"),
+                    pair["original"].get("reward"),
+                    pair["mitigated"].get("reward"),
+                    "YES" if pair["original"].get("crown_jewel_reach") else "NO",
+                    "YES" if pair["mitigated"].get("crown_jewel_reach") else "NO",
+                    pair["mitigated"].get("mitigation_blocked_attempts", 0),
+                )
+                for pair in pairs
+            ],
+        )
+        fill_table(
+            self.paths,
+            [
+                (
+                    pair.get("evaluation_seed"),
+                    ", ".join(
+                        item.get("technique_id", "")
+                        for item in pair["original"].get("mitre_techniques", [])
+                    )
+                    or "UNMAPPED",
+                    ", ".join(
+                        item.get("technique_id", "")
+                        for item in pair["mitigated"].get("mitre_techniques", [])
+                    )
+                    or "UNMAPPED",
+                    len(pair["original"].get("observed_path", [])),
+                    len(pair["mitigated"].get("observed_path", [])),
+                )
+                for pair in pairs
+            ],
+        )
+        provenance = report.get("provenance") or {}
+        promotion = report.get("phase14_promotion") or {}
+        self.provenance.setText(
+            f"REPORT       {report.get('report_id', '—')}\n"
+            f"CHECKPOINT   {provenance.get('checkpoint_sha256', '—')}\n"
+            f"POLICY       {provenance.get('policy_sha256_before', '—')} · unchanged\n"
+            f"INTERVENTION {intervention.get('intervention_version', '—')} · "
+            f"{intervention.get('intervention_sha256', '—')}\n"
+            f"PHASE 14     {promotion.get('source_report_id', 'not promoted')}"
+        )
+
+
 class ResearchPage(Page):
     def __init__(self) -> None:
         super().__init__(
@@ -1075,6 +1237,7 @@ class MainWindow(QMainWindow):
         ("MITRE Workspace", "MITRE Navigator workspace"),
         ("Attack Paths", "Attack paths"),
         ("Path Report", "Explainable attack-path report"),
+        ("Mitigation", "Mitigation counterfactual comparison"),
         ("Research", "Research studies"),
         ("Runs", "Stored runs"),
         ("System", "System status"),
@@ -1137,6 +1300,7 @@ class MainWindow(QMainWindow):
             SimulationPage(self.backend, self.notify),
             PathsPage(self.backend, self.notify),
             AttackPathReportPage(),
+            MitigationComparisonPage(),
             ResearchPage(),
             RunsPage(),
             SystemPage(),

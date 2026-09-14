@@ -102,6 +102,30 @@ example, “CVE-X was path-critical in 61% of observed successful trajectories�
 recorded sample only; it does not claim patching would block 61% of all attacks. Generated
 reports remain under ignored `results/` and are not published.
 
+## Mitigation counterfactual evaluation
+
+Phase 15 promotes an optional Phase 14 observed path-critical CVE into a separate causal
+experiment. A versioned evaluation-only wrapper is applied after the original environment
+is reconstructed. It leaves the action space and deterministic CVE assignment intact, but
+prevents actions assigned to the selected CVE from changing simulator state.
+
+The same frozen PPO checkpoint is evaluated in original and mitigated conditions with an
+identical ordered episode-seed set. Policy hashes are checked before, between and after the
+conditions; no training or gradient-update interface is used. Run and verify the local,
+ignored example with:
+
+```bash
+make phase15-report
+make phase15-verify
+```
+
+The desktop **Mitigation** workspace reads the persisted paired outcomes from PostgreSQL. It
+shows original versus mitigated success, steps, reward, crown-jewel reach and MITRE/path
+summaries. The terminology is intentionally strict: **observed path criticality** is derived
+from recorded paths, while **mitigation effect** is measured by frozen-policy reruns. The
+effect is specific to the checkpoint, topology, intervention and evaluation seeds; it does
+not claim that disabling a CVE blocks every possible attack.
+
 ## Reproducing the environment
 
 ```bash
@@ -144,6 +168,8 @@ src/rlredteam/
   storage/           Module 4: PostgreSQL schema and batched episode logger.
   attack_path_report.py  Phase 14 deterministic facts, phases and observed criticality.
   phase14_completion.py Fail-closed source-to-report reconstruction verifier.
+  mitigation.py       Phase 15 overlay, paired evaluation, statistics and provenance.
+  phase15_completion.py Fail-closed counterfactual report verifier.
 
 gui/                 Native PySide6 research console — separate Podman image
   backend.py         typed snapshot adapter for database and persisted artefacts

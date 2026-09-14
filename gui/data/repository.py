@@ -247,3 +247,22 @@ class Repository:
                 (int(limit),),
             ).fetchall()
         return [dict(row[0]) for row in rows]
+
+    def mitigation_counterfactual_reports(self, limit: int = 50) -> list[dict]:
+        """Return stored Phase 15 paired reports without rerunning evaluation."""
+        if not 1 <= int(limit) <= 500:
+            raise ValueError("report limit must be between 1 and 500")
+        with self._connect() as conn:
+            exists = conn.execute(
+                "SELECT to_regclass('public.mitigation_counterfactual_reports')"
+            ).fetchone()[0]
+            if exists is None:
+                return []
+            rows = conn.execute(
+                """
+                SELECT report_data FROM mitigation_counterfactual_reports
+                ORDER BY created_at DESC, report_id LIMIT %s
+                """,
+                (int(limit),),
+            ).fetchall()
+        return [dict(row[0]) for row in rows]

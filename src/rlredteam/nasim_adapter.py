@@ -138,13 +138,13 @@ class NASimEventAdapter:
 
         access = _access_level(info.get("access"), target)
 
-        error = None
+        error = "mitigation_disabled" if info.get("mitigation_blocked") else None
         for flag, label in (
             ("connection_error", "connection"),
             ("permission_error", "permission"),
             ("undefined_error", "undefined"),
         ):
-            if info.get(flag):
+            if error is None and info.get(flag):
                 error = label
                 break
 

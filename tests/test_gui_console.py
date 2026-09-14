@@ -14,6 +14,7 @@ from gui.data.models import StudyMetric, StudySummary  # noqa: E402
 from gui.views.main_window import MainWindow  # noqa: E402
 from gui.views.research_console import (  # noqa: E402
     AttackPathReportPage,
+    MitigationComparisonPage,
     SimulationPage,
     TrajectoryGraph,
 )
@@ -117,12 +118,64 @@ def simulation_result(profile: str = "hybrid", seed: int = 2001) -> SimulationDa
     )
 
 
-def test_all_seven_desktop_workspaces_navigate() -> None:
+def mitigation_report() -> dict:
+    pairs = []
+    for seed, original, mitigated in (
+        (1001, True, False),
+        (1002, True, True),
+        (1003, False, False),
+        (1004, True, False),
+    ):
+        pairs.append(
+            {
+                "evaluation_seed": seed,
+                "original": {
+                    "success": original,
+                    "steps": 8,
+                    "reward": 20.0,
+                    "crown_jewel_reach": original,
+                    "mitre_techniques": [],
+                    "observed_path": [],
+                },
+                "mitigated": {
+                    "success": mitigated,
+                    "steps": 12,
+                    "reward": 10.0,
+                    "crown_jewel_reach": mitigated,
+                    "mitigation_blocked_attempts": 2,
+                    "mitre_techniques": [],
+                    "observed_path": [],
+                },
+            }
+        )
+    return {
+        "report_id": "phase15-test-report",
+        "intervention": {
+            "selected_cve": "CVE-2024-6387",
+            "intervention_version": "cve-unavailable-overlay-v1",
+            "intervention_sha256": "a" * 64,
+        },
+        "analysis": {
+            "original_success_rate": 0.75,
+            "mitigated_success_rate": 0.25,
+            "absolute_success_rate_change": -0.5,
+            "mcnemar_exact": {"p_value": 0.5, "discordant_pairs": 2},
+        },
+        "pairs": pairs,
+        "provenance": {
+            "checkpoint_sha256": "b" * 64,
+            "policy_sha256_before": "c" * 64,
+        },
+        "phase14_promotion": None,
+    }
+
+
+def test_all_eight_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 7
-    assert len(window.nav_buttons) == 7
+    assert window.stack.count() == 8
+    assert len(window.nav_buttons) == 8
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()
@@ -191,7 +244,7 @@ def test_dashboard_values_are_rendered_from_backend_snapshot() -> None:
     window.apply_dashboard(data)
     app.processEvents()
 
-    runs_page = window.pages[5]
+    runs_page = window.pages[6]
     assert runs_page.table.item(0, 0).text() == "stored-run-123"
     assert runs_page.table.item(0, 6).text() == "25.0%"
     window.close()
@@ -226,7 +279,7 @@ def test_latest_study_drives_overview_and_research_pages() -> None:
     app.processEvents()
 
     overview = window.pages[0]
-    research = window.pages[4]
+    research = window.pages[5]
     assert overview.study_name.text() == "Multi-agent red/blue defence"
     assert overview.episodes.value.text() == "1,200"
     assert overview.metric_table.item(0, 0).text() == "Detection Rate"
@@ -259,6 +312,30 @@ def test_attack_path_report_page_renders_stored_derived_facts() -> None:
     assert page.criticality.rowCount() == 3
     assert page.details.rowCount() == 5
     assert report["provenance"]["facts_payload_sha256"] in page.provenance.text()
+    page.close()
+
+
+def test_mitigation_page_renders_paired_persisted_outcomes() -> None:
+    app = QApplication.instance() or QApplication([])
+    page = MitigationComparisonPage()
+    report = mitigation_report()
+
+    page.apply(
+        DashboardData(
+            source_status="PostgreSQL connected",
+            mitigation_reports=[report],
+        )
+    )
+    app.processEvents()
+
+    assert page.cve.text() == "CVE-2024-6387"
+    assert page.original.value.text() == "75.0%"
+    assert page.mitigated.value.text() == "25.0%"
+    assert page.change.value.text() == "-50.0%"
+    assert page.table.rowCount() == 4
+    assert page.table.item(0, 0).text() == "1001"
+    assert page.paths.rowCount() == 4
+    assert report["provenance"]["checkpoint_sha256"] in page.provenance.text()
     page.close()
 
 

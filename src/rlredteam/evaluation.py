@@ -11,6 +11,7 @@ import csv
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
@@ -121,6 +122,7 @@ def evaluate_policy(
     topology_config: TopologyConfig | None = None,
     reward_config: RewardConfig | None = None,
     hvt_threshold: float = 9.0,
+    environment_factory: Callable[[], object] | None = None,
 ) -> EvaluationBundle:
     """Evaluate a policy without calling ``learn`` or exposing ground truth."""
     if not evaluation_seeds:
@@ -136,11 +138,15 @@ def evaluate_policy(
         set_all_seeds(evaluation_seed)
         if hasattr(model, "set_random_seed"):
             model.set_random_seed(evaluation_seed)
-        environment = RewardWrapper(
-            make_env(topology_config, topology_seed=topology_seed),
-            CVECatalogue.open_default(),
-            topology_seed=topology_seed,
-            reward_config=reward_config,
+        environment = (
+            environment_factory()
+            if environment_factory is not None
+            else RewardWrapper(
+                make_env(topology_config, topology_seed=topology_seed),
+                CVECatalogue.open_default(),
+                topology_seed=topology_seed,
+                reward_config=reward_config,
+            )
         )
         observation, _ = environment.reset(seed=evaluation_seed)
         terminated = truncated = False
@@ -202,6 +208,7 @@ def evaluate_policy(
                     "tactic": breakdown.tactic_name,
                     "technique_id": breakdown.technique_id,
                     "error": event.error,
+                    "mitigation_blocked": bool(info.get("mitigation_blocked", False)),
                 }
             )
             if not math.isfinite(native_return) or not math.isfinite(policy_return):
