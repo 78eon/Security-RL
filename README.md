@@ -192,6 +192,21 @@ make reward-components-run      # train and dedicated-evaluate frozen policies
 make reward-components-verify   # verify pairing, hashes and policy immutability
 ```
 
+## Causal Attack Path Explorer
+
+Phase 19 derives semantic node and edge facts only from Phase 14 trajectory
+facts and recorded AgentKnowledge deltas. Every edge carries evidence IDs,
+episode/step provenance, action semantics, access transition, MITRE catalogue
+mappings and all recorded exposure/access details. Missing facts remain
+`unknown`; hidden topology is rejected. PostgreSQL stores normalized node,
+edge and knowledge-evidence rows and remains authoritative.
+
+```bash
+make phase19-report   # derive and persist the graph
+make phase19-verify   # deterministic, PostgreSQL and headless PySide6 checks
+make gui              # inspect Attack Path and Knowledge Flow tabs
+```
+
 ## Reproducing the environment
 
 ```bash

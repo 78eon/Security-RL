@@ -266,3 +266,17 @@ class Repository:
                 (int(limit),),
             ).fetchall()
         return [dict(row[0]) for row in rows]
+
+    def causal_attack_graphs(self, limit: int = 50) -> list[dict]:
+        """Load normalized Phase 19 graphs from PostgreSQL authority."""
+        if not 1 <= int(limit) <= 500:
+            raise ValueError("graph limit must be between 1 and 500")
+        with self._connect() as conn:
+            exists = conn.execute(
+                "SELECT to_regclass('public.causal_attack_graphs')"
+            ).fetchone()[0]
+            if exists is None:
+                return []
+            from rlredteam.storage.causal_store import CausalGraphStore
+
+            return CausalGraphStore(conn).list(limit)

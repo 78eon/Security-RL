@@ -211,3 +211,59 @@ CREATE TABLE IF NOT EXISTS mitigation_counterfactual_pairs (
 
 CREATE INDEX IF NOT EXISTS idx_mitigation_reports_cve
     ON mitigation_counterfactual_reports (selected_cve, created_at DESC);
+
+-- Phase 19 evidence-backed derived graph. PostgreSQL is authoritative for the
+-- graph projection; every node/edge points back to immutable knowledge evidence.
+CREATE TABLE IF NOT EXISTS causal_attack_graphs (
+    graph_id        TEXT PRIMARY KEY CHECK (length(graph_id) = 64),
+    report_id       TEXT NOT NULL,
+    schema_version  TEXT NOT NULL,
+    provenance      JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS causal_knowledge_evidence (
+    graph_id             TEXT NOT NULL REFERENCES causal_attack_graphs(graph_id) ON DELETE CASCADE,
+    evidence_id          TEXT NOT NULL CHECK (length(evidence_id) = 64),
+    episode_key          TEXT NOT NULL,
+    step_idx             INTEGER NOT NULL CHECK (step_idx >= 0),
+    source_event_sha256  TEXT NOT NULL,
+    evidence_kind        TEXT NOT NULL,
+    evidence_data        JSONB NOT NULL,
+    PRIMARY KEY (graph_id, evidence_id)
+);
+
+CREATE TABLE IF NOT EXISTS causal_node_facts (
+    graph_id              TEXT NOT NULL REFERENCES causal_attack_graphs(graph_id) ON DELETE CASCADE,
+    node_id               TEXT NOT NULL,
+    node_type             TEXT NOT NULL,
+    first_discovery_step  TEXT NOT NULL,
+    discovered_by         TEXT NOT NULL,
+    evidence_ids          TEXT[] NOT NULL,
+    node_data             JSONB NOT NULL,
+    PRIMARY KEY (graph_id, node_id)
+);
+
+CREATE TABLE IF NOT EXISTS causal_edge_facts (
+    graph_id           TEXT NOT NULL REFERENCES causal_attack_graphs(graph_id) ON DELETE CASCADE,
+    edge_id            TEXT NOT NULL CHECK (length(edge_id) = 64),
+    source_node        TEXT NOT NULL,
+    target_node        TEXT NOT NULL,
+    relationship_type  TEXT NOT NULL CHECK (relationship_type IN (
+        'DISCOVERED', 'REVEALED', 'YIELDED_CREDENTIAL', 'GRANTS_ACCESS',
+        'EXPLOITED', 'AUTHENTICATED_TO', 'PIVOTED_TO', 'CONNECTED_TO',
+        'HOSTS', 'EXPOSES', 'CONTAINS'
+    )),
+    episode_key        TEXT NOT NULL,
+    step_idx           INTEGER NOT NULL CHECK (step_idx >= 0),
+    evidence_ids       TEXT[] NOT NULL CHECK (cardinality(evidence_ids) > 0),
+    edge_data          JSONB NOT NULL,
+    PRIMARY KEY (graph_id, edge_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_causal_graph_report
+    ON causal_attack_graphs (report_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_causal_edge_source_target
+    ON causal_edge_facts (graph_id, source_node, target_node);
+CREATE INDEX IF NOT EXISTS idx_causal_evidence_step
+    ON causal_knowledge_evidence (graph_id, episode_key, step_idx);

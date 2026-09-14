@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from math import ceil
 
 from PySide6.QtCore import QRectF, Qt, QTimer
@@ -682,8 +683,42 @@ class AttackPathReportPage(Page):
                 wrap=True,
             )
         )
-        self.graph = EnterpriseGraph()
-        graph_panel.layout().addWidget(self.graph)
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(label("Evidence filter", "FieldLabel"))
+        self.graph_filter = QComboBox()
+        self.graph_filter.addItem("All evidence", "")
+        self.graph_filter.addItem("Vulnerabilities", "vulnerabilities")
+        self.graph_filter.addItem("Credentials / identity", "credentials")
+        self.graph_filter.addItem("MITRE mappings", "mitre")
+        self.graph_filter.currentIndexChanged.connect(self._apply_graph_filters)
+        filter_row.addWidget(self.graph_filter)
+        filter_row.addStretch()
+        graph_panel.layout().addLayout(filter_row)
+        self.graph_views = QTabWidget()
+        self.attack_graph = EnterpriseGraph()
+        self.knowledge_graph = EnterpriseGraph()
+        self.graph = self.attack_graph
+        self.graph_views.addTab(self.attack_graph, "Attack Path")
+        self.graph_views.addTab(self.knowledge_graph, "Knowledge Flow")
+        graph_panel.layout().addWidget(self.graph_views)
+        inspector_row = QHBoxLayout()
+        self.node_inspector = label(
+            "Select a node to inspect evidence.", "MonoDetail", wrap=True
+        )
+        self.edge_inspector = label(
+            "Select an edge to inspect its causal chain.", "MonoDetail", wrap=True
+        )
+        inspector_row.addWidget(self.node_inspector, 1)
+        inspector_row.addWidget(self.edge_inspector, 1)
+        graph_panel.layout().addLayout(inspector_row)
+        self.evidence_items = QTableWidget(0, 3)
+        self.evidence_items.setHorizontalHeaderLabels(["Evidence ID", "Episode", "Step"])
+        configure_table(self.evidence_items, stretch_column=0)
+        self.evidence_items.cellClicked.connect(self._evidence_clicked)
+        graph_panel.layout().addWidget(self.evidence_items)
+        for graph in (self.attack_graph, self.knowledge_graph):
+            graph.node_selected.connect(self._inspect_node)
+            graph.edge_selected.connect(self._inspect_edge)
         self.root.addWidget(graph_panel)
 
         critical_panel = panel(QVBoxLayout())
@@ -726,9 +761,12 @@ class AttackPathReportPage(Page):
         self.root.addWidget(self.provenance)
         self.reports: list[dict] = []
         self.current_report: dict = {}
+        self.causal_graphs: list[dict] = []
+        self.current_causal_graph: dict = {}
 
     def apply(self, data: DashboardData) -> None:
         self.reports = list(data.attack_path_reports)
+        self.causal_graphs = list(data.causal_attack_graphs)
         self.selector.blockSignals(True)
         self.selector.clear()
         for report in self.reports:
@@ -747,6 +785,7 @@ class AttackPathReportPage(Page):
             self.mode.setText("NO STORED REPORT")
             self.navigator.set_events([])
             self.graph.clear_graph("No persisted Phase 14 report")
+            self.knowledge_graph.clear_graph("No persisted Phase 19 causal graph")
             fill_table(self.criticality, [])
             fill_table(self.details, [])
             return
@@ -775,11 +814,27 @@ class AttackPathReportPage(Page):
         events = [_fact_event(fact) for fact in facts]
         self.navigator.set_events(events)
         observed_graph = report.get("observed_graph") or {}
-        self.graph.set_graph(
-            list(observed_graph.get("nodes") or []),
-            list(observed_graph.get("edges") or []),
-            events,
+        self.current_causal_graph = next(
+            (
+                graph
+                for graph in self.causal_graphs
+                if str(graph.get("report_id")) == str(report.get("report_id"))
+            ),
+            {},
         )
+        if self.current_causal_graph:
+            nodes, edges = self._causal_canvas_data(self.current_causal_graph)
+            self.attack_graph.set_graph(nodes, edges, events)
+            self.knowledge_graph.set_graph(nodes, edges, events)
+            self._apply_graph_filters()
+        else:
+            self.attack_graph.set_graph(
+                list(observed_graph.get("nodes") or []),
+                list(observed_graph.get("edges") or []),
+                events,
+            )
+            self.knowledge_graph.clear_graph("No persisted Phase 19 knowledge flow")
+        fill_table(self.evidence_items, [])
         criticality = list(report.get("observed_path_criticality") or [])
         fill_table(
             self.criticality,
@@ -809,6 +864,125 @@ class AttackPathReportPage(Page):
             f"MITRE   {provenance.get('mitre_catalogue_version', '—')} · "
             f"{provenance.get('mitre_catalogue_sha256', '—')}"
         )
+
+    @staticmethod
+    def _causal_canvas_data(graph: dict) -> tuple[list[dict], list[dict]]:
+        nodes = [
+            {
+                "id": node.get("node_id", "unknown"),
+                "type": node.get("node_type", "unknown"),
+                "attributes": node,
+            }
+            for node in graph.get("nodes", [])
+        ]
+        grouped: dict[tuple[str, str, str], dict] = {}
+        for edge in graph.get("edges", []):
+            key = (
+                str(edge.get("source_node", "unknown")),
+                str(edge.get("target_node", "unknown")),
+                str(edge.get("relationship_type", "unknown")),
+            )
+            canvas = grouped.setdefault(
+                key,
+                {
+                    "source": key[0],
+                    "target": key[1],
+                    "type": key[2],
+                    "categories": set(),
+                    "attributes": dict(edge),
+                    "evidence_ids": set(),
+                    "evidence_steps": set(),
+                    "observed_count": 0,
+                },
+            )
+            canvas["categories"].update(edge.get("categories") or [])
+            canvas["evidence_ids"].update(edge.get("evidence_ids") or [])
+            canvas["evidence_steps"].update(edge.get("evidence_steps") or [])
+            canvas["observed_count"] += 1
+        edges = []
+        for canvas in grouped.values():
+            canvas["categories"] = sorted(canvas["categories"])
+            canvas["evidence_ids"] = sorted(canvas["evidence_ids"])
+            canvas["evidence_steps"] = sorted(canvas["evidence_steps"])
+            canvas["attributes"] = dict(canvas["attributes"]) | {
+                "evidence_ids": canvas["evidence_ids"],
+                "evidence_steps": canvas["evidence_steps"],
+                "observed_count": canvas["observed_count"],
+            }
+            edges.append(canvas)
+        return nodes, edges
+
+    def _apply_graph_filters(self, _index: int = -1) -> None:
+        selected = str(self.graph_filter.currentData() or "")
+        extra = {selected} if selected else set()
+        self.attack_graph.set_edge_categories({"attack_path"} | extra)
+        self.knowledge_graph.set_edge_categories({"knowledge_flow"} | extra)
+
+    def _inspect_node(self, canvas_node: dict) -> None:
+        node = dict(canvas_node.get("attributes") or canvas_node)
+        node_id = str(node.get("node_id", canvas_node.get("id", "unknown")))
+        explanation = ""
+        if self.current_causal_graph:
+            from rlredteam.causal_graph import why_actionable
+
+            explanation = why_actionable(self.current_causal_graph, node_id)["explanation"]
+        self.node_inspector.setText(
+            "NODE\n"
+            + json.dumps(node, indent=2, sort_keys=True)
+            + f"\n\nWHY ACTIONABLE\n{explanation}"
+        )
+        self._show_evidence(list(node.get("evidence_ids") or []))
+
+    def _inspect_edge(self, canvas_edge: dict) -> None:
+        edge = dict(canvas_edge.get("attributes") or canvas_edge)
+        self.edge_inspector.setText(
+            "CONNECTION\n" + json.dumps(edge, indent=2, sort_keys=True)
+        )
+        self._show_evidence(list(edge.get("evidence_ids") or []))
+
+    def _show_evidence(self, evidence_ids: list[str]) -> None:
+        selected = set(evidence_ids)
+        rows = [
+            (
+                item.get("evidence_id", "unknown"),
+                item.get("episode_id", "unknown"),
+                item.get("step", "unknown"),
+            )
+            for item in self.current_causal_graph.get("evidence", [])
+            if item.get("evidence_id") in selected
+        ]
+        fill_table(self.evidence_items, rows)
+
+    def _evidence_clicked(self, row: int, _column: int) -> None:
+        evidence_id = self.evidence_items.item(row, 0)
+        if evidence_id is not None:
+            self.jump_to_evidence(evidence_id.text())
+
+    def jump_to_evidence(self, evidence_id: str) -> bool:
+        evidence = next(
+            (
+                item
+                for item in self.current_causal_graph.get("evidence", [])
+                if str(item.get("evidence_id")) == str(evidence_id)
+            ),
+            None,
+        )
+        if evidence is None:
+            return False
+        episode_id, step = str(evidence.get("episode_id")), int(evidence.get("step", -1))
+        episode_index = self.episode.findText(episode_id)
+        if episode_index >= 0:
+            self.episode.setCurrentIndex(episode_index)
+            facts = [
+                fact
+                for fact in self.current_report.get("facts", [])
+                if str(fact.get("episode_id")) == episode_id
+            ]
+            for row, fact in enumerate(facts):
+                if int(fact.get("trajectory_step", -2)) == step:
+                    self.details.selectRow(row)
+                    return True
+        return False
 
     def _episode_selected(self, index: int) -> None:
         if index < 0:

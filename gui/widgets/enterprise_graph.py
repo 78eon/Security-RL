@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import QPointF, QRectF, QTimer
+from PySide6.QtCore import QPointF, QRectF, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QGraphicsPathItem,
@@ -66,6 +66,9 @@ def causal_entities(nodes: list[dict], trajectory: list[dict]) -> tuple[set[str]
 class EnterpriseGraph(QGraphicsView):
     """Scrollable, zoomable graph grouped by enterprise entity type."""
 
+    node_selected = Signal(dict)
+    edge_selected = Signal(dict)
+
     NODE_WIDTH = 184
     NODE_HEIGHT = 58
     LANE_WIDTH = 248
@@ -89,6 +92,7 @@ class EnterpriseGraph(QGraphicsView):
         self._edges: list[dict] = []
         self._trajectory: list[dict] = []
         self._visible_trajectory: list[dict] = []
+        self._edge_categories: set[str] = set()
         self.replay_index = 0
         self.replay_timer = QTimer(self)
         self.replay_timer.setInterval(420)
@@ -111,6 +115,11 @@ class EnterpriseGraph(QGraphicsView):
         self.highlighted_entities, self.final_entity = causal_entities(
             self._nodes, self._trajectory
         )
+        self._render()
+
+    def set_edge_categories(self, categories: set[str] | None) -> None:
+        """Show edges matching all requested evidence categories."""
+        self._edge_categories = set(categories or ())
         self._render()
 
     def clear_graph(self, message: str = "No topology is available") -> None:
@@ -206,6 +215,9 @@ class EnterpriseGraph(QGraphicsView):
             )
         }
         for edge in self._edges:
+            categories = set(map(str, edge.get("categories", ())))
+            if self._edge_categories and not self._edge_categories <= categories:
+                continue
             source = str(edge.get("source", ""))
             target = str(edge.get("target", ""))
             if source not in positions or target not in positions:
@@ -233,8 +245,18 @@ class EnterpriseGraph(QGraphicsView):
                 )
             )
             item.setToolTip(str(edge.get("type", "relationship")))
+            item.setData(0, "edge")
+            item.setData(1, edge)
             item.setZValue(-2 if active else -3)
             self.graph_scene.addItem(item)
+            relationship = str(edge.get("type", "unknown"))
+            edge_label = QGraphicsSimpleTextItem(relationship)
+            edge_label.setBrush(QBrush(QColor(theme.TEXT_SECONDARY)))
+            edge_label.setPos((start.x() + end.x()) / 2, (start.y() + end.y()) / 2 - 16)
+            edge_label.setToolTip(json.dumps(edge, indent=2, sort_keys=True))
+            edge_label.setData(0, "edge")
+            edge_label.setData(1, edge)
+            self.graph_scene.addItem(edge_label)
 
         for node in self._nodes:
             node_id = str(node.get("id", ""))
@@ -251,6 +273,8 @@ class EnterpriseGraph(QGraphicsView):
                 json.dumps(node.get("attributes", {}), indent=2, sort_keys=True)
                 or "No attributes"
             )
+            card.setData(0, "node")
+            card.setData(1, node)
             self.graph_scene.addItem(card)
 
             title = QGraphicsSimpleTextItem(node_id, card)
@@ -274,3 +298,15 @@ class EnterpriseGraph(QGraphicsView):
         current = self.transform().m11()
         if 0.35 <= current * factor <= 2.5:
             self.scale(factor, factor)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        item = self.itemAt(event.position().toPoint())
+        while item is not None and item.data(0) is None:
+            item = item.parentItem()
+        if item is not None:
+            kind, payload = item.data(0), item.data(1)
+            if kind == "node" and isinstance(payload, dict):
+                self.node_selected.emit(payload)
+            elif kind == "edge" and isinstance(payload, dict):
+                self.edge_selected.emit(payload)
+        super().mousePressEvent(event)
