@@ -74,6 +74,7 @@ class RewardBreakdown:
     native: float
     cve: float = 0.0
     tactic: float = 0.0
+    discovery: float = 0.0
     crown_jewel: float = 0.0
     penalty: float = 0.0
     weight: float = 0.0
@@ -88,6 +89,7 @@ class RewardBreakdown:
             "native_reward": self.native,
             "cve_term": self.cve,
             "tactic_term": self.tactic,
+            "discovery_term": self.discovery,
             "crown_jewel_term": self.crown_jewel,
             "penalty_term": self.penalty,
             "cvss_weight": self.weight,
@@ -95,6 +97,37 @@ class RewardBreakdown:
             "technique_id": self.technique_id,
             "tactic": self.tactic_name,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class RewardComponents:
+    """Explicit switches for the component-level reward study.
+
+    ``RewardConfig.components is None`` selects the historical Phase 1 reward
+    implementation byte-for-byte.  An explicit component block selects this
+    additive model, even when every switch is false.  This separation keeps all
+    previously frozen reward hashes and results valid.
+    """
+
+    cvss_weighting: bool = False
+    mitre_tactic_shaping: bool = False
+    informative_success_shaping: bool = False
+    failure_penalty: bool = False
+    objective_reward: bool = False
+    informative_success_reward: float = 1.0
+
+    def enabled(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name in (
+                "cvss_weighting",
+                "mitre_tactic_shaping",
+                "informative_success_shaping",
+                "failure_penalty",
+                "objective_reward",
+            )
+            if getattr(self, name)
+        )
 
 
 @dataclass(frozen=True)
@@ -122,6 +155,10 @@ class RewardConfig:
     # makes farming optimal. See RewardEngine._is_payable.
     first_success_only: bool = True
 
+    # None is the immutable legacy model.  A supplied block activates the
+    # versioned, independently switchable component model.
+    components: RewardComponents | None = None
+
     def hash(self) -> str:
         """Stable digest of the reward settings themselves.
 
@@ -145,6 +182,20 @@ class RewardConfig:
                 "w_max": self.weight.w_max,
             },
         }
+        if self.components is not None:
+            payload["component_model"] = {
+                "version": 1,
+                "cvss_weighting": self.components.cvss_weighting,
+                "mitre_tactic_shaping": self.components.mitre_tactic_shaping,
+                "informative_success_shaping": (
+                    self.components.informative_success_shaping
+                ),
+                "failure_penalty": self.components.failure_penalty,
+                "objective_reward": self.components.objective_reward,
+                "informative_success_reward": (
+                    self.components.informative_success_reward
+                ),
+            }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
@@ -152,11 +203,13 @@ class RewardConfig:
     def from_yaml(cls, path: Path) -> RewardConfig:
         raw = yaml.safe_load(Path(path).read_text())["reward"]
         weight_raw = raw.pop("weight", {}) or {}
+        component_raw = raw.pop("components", None)
         if "mode" in weight_raw:
             weight_raw["mode"] = WeightMode(weight_raw["mode"])
         return cls(
             mode=RewardMode(raw.pop("mode")),
             weight=WeightParams(**weight_raw),
+            components=(RewardComponents(**component_raw) if component_raw is not None else None),
             **raw,
         )
 
@@ -227,7 +280,65 @@ class RewardEngine:
                 paid=paid,
             )
 
+        if self.config.components is not None:
+            return self._score_components(event)
         return self._score_shaped(event)
+
+    def _score_components(self, event: AttackEvent) -> RewardBreakdown:
+        """Score an event using the explicit additive Phase 18 components."""
+        config = self.config
+        components = config.components
+        assert components is not None
+        technique = KIND_TO_TECHNIQUE.get(event.kind)
+        tactic_name = _KIND_TO_TACTIC.get(event.kind)
+
+        if not event.success:
+            penalty = config.failed_action if components.failure_penalty else 0.0
+            return RewardBreakdown(
+                total=penalty,
+                native=event.native_reward,
+                penalty=penalty,
+                technique_id=technique,
+                tactic_name=tactic_name,
+            )
+
+        paid = self._is_payable(event)
+        cve_term = 0.0
+        weight = 0.0
+        if paid and components.cvss_weighting and event.cvss_base is not None:
+            weight = severity_weight(event.cvss_base, config.weight)
+            cve_term = config.cve_scale * weight
+        tactic_term = (
+            config.tactic_bonuses.get(tactic_name, 0.0)
+            if paid and components.mitre_tactic_shaping and tactic_name
+            else 0.0
+        )
+        discovery_term = (
+            components.informative_success_reward
+            if paid and components.informative_success_shaping
+            else 0.0
+        )
+        crown = (
+            config.crown_jewel
+            if paid
+            and components.objective_reward
+            and not event.kind.is_scan
+            and event.is_crown_jewel
+            else 0.0
+        )
+        return RewardBreakdown(
+            total=cve_term + tactic_term + discovery_term + crown,
+            native=event.native_reward,
+            cve=cve_term,
+            tactic=tactic_term,
+            discovery=discovery_term,
+            crown_jewel=crown,
+            weight=weight,
+            cve_id=event.cve_id,
+            technique_id=technique,
+            tactic_name=tactic_name,
+            paid=paid,
+        )
 
     def _score_shaped(self, event: AttackEvent) -> RewardBreakdown:
         config = self.config
@@ -288,11 +399,25 @@ class RewardEngine:
         ``scans_per_host`` recon payments.
         """
         config = self.config
+        components = config.components
         w_max = config.weight.w_max
-        exploit_pay = config.cve_scale * w_max + config.tactic_bonuses.get("exploit", 0.0)
-        privesc_pay = config.cve_scale * w_max + config.tactic_bonuses.get("privesc", 0.0)
+        cve_scale = config.cve_scale if components is None or components.cvss_weighting else 0.0
+        tactic_enabled = components is None or components.mitre_tactic_shaping
+        informative = (
+            components.informative_success_reward
+            if components is not None and components.informative_success_shaping
+            else 0.0
+        )
+        exploit_pay = cve_scale * w_max + informative
+        privesc_pay = cve_scale * w_max + informative
+        if tactic_enabled:
+            exploit_pay += config.tactic_bonuses.get("exploit", 0.0)
+            privesc_pay += config.tactic_bonuses.get("privesc", 0.0)
         # Scans carry no CVE, so recon earns its tactic bonus only.
-        recon_pay = scans_per_host * config.tactic_bonuses.get("recon", 0.0)
+        recon_unit = informative
+        if tactic_enabled:
+            recon_unit += config.tactic_bonuses.get("recon", 0.0)
+        recon_pay = scans_per_host * recon_unit
         return num_hosts * (exploit_pay + privesc_pay + recon_pay)
 
     def assert_goal_dominance(

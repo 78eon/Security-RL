@@ -274,6 +274,7 @@ class EpisodeCollector(BaseCallback):
                 cvss_base=event.cvss_base,
                 cve_term=breakdown.cve,
                 tactic_term=breakdown.tactic,
+                discovery_term=breakdown.discovery,
                 crown_jewel_term=breakdown.crown_jewel,
                 penalty_term=breakdown.penalty,
                 access_gained=int(event.access_gained),
@@ -353,8 +354,9 @@ def train(args: argparse.Namespace) -> dict:
     # topology and destroys the causal comparison the ablation exists to make.
     # It has a fixed default and must be changed deliberately.
     topology_seed = args.topology_seed
+    condition = args.condition or str(reward_config.mode)
     prefix = f"{args.experiment_id}-" if args.experiment_id else ""
-    run_name = f"{prefix}{reward_config.mode}-s{args.seed}-t{topology_seed}"
+    run_name = f"{prefix}{condition}-s{args.seed}-t{topology_seed}"
     out_dir = RUNS_DIR / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -386,7 +388,7 @@ def train(args: argparse.Namespace) -> dict:
         training_budget=args.timesteps,
         checkpoint_path=str(out_dir / "model.zip"),
         ppo_config=ppo_config,
-        reward_mode=str(reward_config.mode),
+        reward_mode=condition,
     )
 
     frozen = json.loads(Path(args.frozen).read_text()) if args.frozen else None
@@ -421,7 +423,7 @@ def train(args: argparse.Namespace) -> dict:
 
         episode_logger = EpisodeLogger.start(
             name=run_name,
-            reward_mode=str(reward_config.mode),
+            reward_mode=condition,
             config_hash=manifest.reward_config_hash,
             topology_config_hash=manifest.topology_config_hash,
             topology_hash=manifest.topology_hash,
@@ -429,7 +431,7 @@ def train(args: argparse.Namespace) -> dict:
             cve_manifest_sha256=manifest.cve_manifest_sha256,
             seed_set=[args.seed],
             log_steps=args.log_steps,
-            condition=str(reward_config.mode),
+            condition=condition,
             algorithm="PPO",
             hyperparameters=ppo_config,
             designation="training",
@@ -553,6 +555,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--experiment-id",
         default="",
         help="optional prefix that keeps a controlled experiment's runs isolated",
+    )
+    parser.add_argument(
+        "--condition",
+        default="",
+        help="explicit study-arm label; reward.mode remains the scoring implementation",
     )
     parser.add_argument(
         "--topology-seed",

@@ -177,6 +177,21 @@ CybORG exploit names remain `simulator_vulnerability_id` values and are not
 invented as CVEs. Generated evidence remains under ignored `runs/cyborg/` and
 `results/cyborg/`.
 
+## Component-level reward ablation
+
+Phase 18 keeps the fixed NASim topology, CVE catalogue, PPO settings and
+matched seed sets constant while independently enabling CVSS weighting, MITRE
+tactic shaping, informative-success shaping, the failure penalty and the
+objective reward. The historical sparse/shaped implementation and hashes are
+unchanged; only configs with an explicit `components` block use the new model.
+
+```bash
+make reward-components-freeze   # preregister immutable inputs
+make reward-components-dry-run  # inspect the seven-arm, 21-run grid
+make reward-components-run      # train and dedicated-evaluate frozen policies
+make reward-components-verify   # verify pairing, hashes and policy immutability
+```
+
 ## Reproducing the environment
 
 ```bash

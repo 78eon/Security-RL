@@ -89,6 +89,7 @@ class StepRecord:
     cvss_base: float | None = None
     cve_term: float = 0.0
     tactic_term: float = 0.0
+    discovery_term: float = 0.0
     crown_jewel_term: float = 0.0
     penalty_term: float = 0.0
     access_gained: int = 0
@@ -350,14 +351,15 @@ class EpisodeLogger:
                             rl_action_index, simulator_action, framework_mappings,
                             tactic, technique_id, target_subnet, target_host,
                             success, reward, native_reward, cve_id, cvss_base
-                            , cve_term, tactic_term, crown_jewel_term, penalty_term,
+                            , cve_term, tactic_term, discovery_term,
+                            crown_jewel_term, penalty_term,
                             access_gained, newly_discovered, is_crown_jewel,
                             reward_paid, error, target_entity, state_changed,
                             prerequisites, outcomes
                         ) VALUES (
                             %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                             %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            %s,%s,%s
+                            %s,%s,%s,%s
                         )
                         """,
                         [
@@ -380,6 +382,7 @@ class EpisodeLogger:
                                 s.cvss_base,
                                 s.cve_term,
                                 s.tactic_term,
+                                s.discovery_term,
                                 s.crown_jewel_term,
                                 s.penalty_term,
                                 s.access_gained,

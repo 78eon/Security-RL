@@ -1,0 +1,35 @@
+{
+  "cve_manifest_sha256": "c14575707519311e90a571e1b27d0bed16b2d10e41757f60a135ab8756137205",
+  "design_version": 1,
+  "environment_config_hash": "08d7126571f4d0c3",
+  "evaluation_seeds": [
+    6201,
+    6202,
+    6203,
+    6204,
+    6205
+  ],
+  "experiment_config_sha256": "ecdcf5d3bbbf9eb637c600a52f4c9dbc6e17e7b9a6e80fca06505f951689daf4",
+  "experiment_id": "reward_components_01",
+  "frozen_at": "2026-09-14T08:28:33Z",
+  "ppo_config_hash": "220c48742b077c43",
+  "preregistered_from_commit": "9c4a184e7685f4d783a17bf83f2487b05c76d9ca",
+  "reward_config_hash": {
+    "all_components": "76bb266cb2081720",
+    "cvss_only": "15acc82a4590d314",
+    "failure_only": "c8d8db2f1260a7c1",
+    "informative_only": "60dd8242ce69297a",
+    "mitre_only": "f8a1fbfdc52c04db",
+    "objective_only": "92b7aae65c44d7d5",
+    "zero_baseline": "2bd0b5de7d2eb0b8"
+  },
+  "topology_config_hash": "2aa12404d40a23d0",
+  "topology_hash": "f875a25adf37ee34",
+  "topology_seed": 42,
+  "training_seeds": [
+    5201,
+    5202,
+    5203
+  ],
+  "training_timesteps": 8192
+}

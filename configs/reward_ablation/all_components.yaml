@@ -1,0 +1,15 @@
+reward:
+  mode: shaped
+  cve_scale: 2.5
+  tactic_bonuses: {recon: 1.0, exploit: 0.5, privesc: 2.0, exfil: 1.5}
+  crown_jewel: 100.0
+  failed_action: -5.0
+  first_success_only: true
+  weight: {mode: power, gamma: 2.0, w_min: 0.25, w_max: 1.0}
+  components:
+    cvss_weighting: true
+    mitre_tactic_shaping: true
+    informative_success_shaping: true
+    failure_penalty: true
+    objective_reward: true
+    informative_success_reward: 0.1

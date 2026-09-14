@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test reward-components-freeze reward-components-dry-run reward-components-run reward-components-verify cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -105,6 +105,23 @@ experiment:     ## Train, evaluate and package the canonical Essential experimen
 	$(COMPOSE) up -d postgres
 	$(COMPOSE) run --rm app python scripts/run_experiment.py \
 		--config configs/experiments/experiment_01.yaml
+
+reward-components-freeze: ## Preregister the Phase 18 component-level reward study
+	podman run --rm --user 0 \
+		-v "$$PWD:/app:rw,z" -w /app localhost/sourcecode_app:latest \
+		python scripts/run_reward_component_ablation.py --freeze
+
+reward-components-dry-run: ## Validate Phase 18 hashes and print its 21-run grid
+	$(COMPOSE) run --rm app python scripts/run_reward_component_ablation.py --dry-run
+
+reward-components-run: ## Train/evaluate all matched Phase 18 reward arms
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app python scripts/run_reward_component_ablation.py
+
+reward-components-verify: ## Verify Phase 18 policies, pairing and frozen inputs
+	$(COMPOSE) run --rm app pytest -q -p no:cacheprovider \
+		tests/test_reward.py tests/test_component_ablation.py
+	$(COMPOSE) run --rm app python scripts/verify_reward_component_ablation.py
 
 gui-build:      ## Build the desktop GUI image (separate from training)
 	podman build -t rlredteam-gui -f Dockerfile.gui .

@@ -1,0 +1,23 @@
+experiment:
+  id: reward_components_01
+  description: Matched-seed additive reward-component ablation on the fixed NASim topology
+  design_version: 1
+  baseline_arm: zero_baseline
+  full_arm: all_components
+  arms:
+    - zero_baseline
+    - cvss_only
+    - mitre_only
+    - informative_only
+    - failure_only
+    - objective_only
+    - all_components
+  topology_seed: 42
+  training_seeds: [5201, 5202, 5203]
+  evaluation_seeds: [6201, 6202, 6203, 6204, 6205]
+  training_timesteps: 8192
+  learning_rate_schedule: constant
+  postgres: true
+  log_steps: true
+  reward_config_dir: configs/reward_ablation
+  frozen_inputs: configs/frozen_reward_components_01.json
