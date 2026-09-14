@@ -1,0 +1,24 @@
+# CybORG remains isolated from the frozen NASim and CyberBattle dependency sets.
+FROM localhost/sourcecode_app:latest
+
+USER root
+
+ARG CYBORG_REVISION=2742b5e0ce4330c9b14006b38acd3b5ebe00d6fd
+
+# CybORG 3.1 relies on Gym 0.23 RNG deepcopy behaviour that changed after
+# NumPy 1.23. The compatibility pair is intentionally confined to this image.
+RUN pip install --no-cache-dir \
+        numpy==1.23.5 \
+        matplotlib==3.7.5 \
+        gym==0.23.1 \
+        prettytable==3.18.0 \
+        docutils==0.23 \
+        pettingzoo==1.24.3 \
+        paramiko==4.0.0 \
+        pygame==2.6.1 \
+    && git clone https://github.com/cage-challenge/CybORG.git /opt/cyborg \
+    && git -C /opt/cyborg checkout "$CYBORG_REVISION" \
+    && test "$(git -C /opt/cyborg rev-parse HEAD)" = "$CYBORG_REVISION" \
+    && pip install --no-cache-dir --no-deps -e /opt/cyborg
+
+USER 10001:10001

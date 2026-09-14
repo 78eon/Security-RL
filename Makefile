@@ -1,4 +1,4 @@
-.PHONY: help build gui gui-build gui-test cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
+.PHONY: help build gui gui-build gui-test cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -22,6 +22,21 @@ CYBERBATTLE_RUN := podman run --rm --network none --cap-drop=all \
 	-v "$(CURDIR)/runs:/app/runs:rw,z" \
 	-v "$(CURDIR)/results:/app/results:rw,z" \
 	-w /app $(CYBERBATTLE_IMAGE)
+CYBORG_IMAGE := localhost/security-rl-cyborg:latest
+CYBORG_RUN := podman run --rm --network none --cap-drop=all \
+	--security-opt=no-new-privileges --user 0:0 \
+	-e PYTHONHASHSEED=0 -e MPLCONFIGDIR=/tmp/matplotlib \
+	-e RLREDTEAM_GIT_DIRTY="$(RLREDTEAM_GIT_DIRTY)" \
+	-v "$(CURDIR)/src:/app/src:ro,z" \
+	-v "$(CURDIR)/tests:/app/tests:ro,z" \
+	-v "$(CURDIR)/scripts:/app/scripts:ro,z" \
+	-v "$(CURDIR)/configs:/app/configs:ro,z" \
+	-v "$(CURDIR)/data:/app/data:ro,z" \
+	-v "$(CURDIR)/.git:/app/.git:ro,z" \
+	-v "$(CURDIR)/pyproject.toml:/app/pyproject.toml:ro,z" \
+	-v "$(CURDIR)/runs:/app/runs:rw,z" \
+	-v "$(CURDIR)/results:/app/results:rw,z" \
+	-w /app $(CYBORG_IMAGE)
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -132,6 +147,29 @@ cyberbattle-eval: cyberbattle-dirs ## Deterministically evaluate frozen PPO on h
 cyberbattle-verify: cyberbattle-build ## Test and verify CyberBattle artifacts and frozen NASim isolation
 	$(CYBERBATTLE_RUN) pytest -q -p no:cacheprovider tests/test_simulator_adapter.py tests/test_cyberbattle_adapter.py
 	$(CYBERBATTLE_RUN) python scripts/verify_cyberbattle_completion.py
+
+cyborg-build: ## Build the pinned, dependency-isolated CybORG image
+	podman image exists localhost/sourcecode_app:latest || $(COMPOSE) build app
+	podman build -t $(CYBORG_IMAGE) -f Dockerfile.cyborg .
+
+cyborg-dirs: cyborg-build ## Create only the dedicated CybORG evidence directories
+	podman run --rm --network none --user 0:0 \
+		-v "$(CURDIR)/runs:/app/runs:rw,z" \
+		-v "$(CURDIR)/results:/app/results:rw,z" $(CYBORG_IMAGE) \
+		sh -c 'mkdir -p /app/runs/cyborg /app/results/cyborg'
+
+cyborg-smoke: cyborg-dirs ## Run the observable-only Scenario1 path and Phase 14 report
+	$(CYBORG_RUN) python scripts/cyborg_smoke.py
+
+cyborg-train: cyborg-dirs ## Train standard single-agent PPO through the CybORG adapter
+	$(CYBORG_RUN) python scripts/train_cyborg.py
+
+cyborg-eval: cyborg-dirs ## Deterministically evaluate the frozen CybORG PPO policy
+	$(CYBORG_RUN) python scripts/evaluate_cyborg.py
+
+cyborg-verify: cyborg-build ## Test and verify CybORG evidence and hidden-state isolation
+	$(CYBORG_RUN) pytest -q -p no:cacheprovider tests/test_simulator_adapter.py tests/test_cyborg_adapter.py
+	$(CYBORG_RUN) python scripts/verify_cyborg_completion.py
 
 phase14-report: ## Generate and persist deterministic explainable attack-path report
 	$(COMPOSE) up -d postgres

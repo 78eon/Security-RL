@@ -153,6 +153,30 @@ compatibility shim for an upstream NumPy 2 construction call. It does not alter 
 image. Generated checkpoints and reports remain under ignored `runs/cyberbattle/` and
 `results/cyberbattle/`.
 
+## CybORG adapter
+
+CybORG is an additive third simulator backend through the same
+`SimulatorAdapter` contract. The controlled first integration uses the official
+four-host `Scenario1.yaml`, an external Red agent and single-agent MaskablePPO.
+Only Red's native observation and visible action prerequisites update
+`AgentKnowledge`; native simulator ground truth is not read by the adapter.
+
+The CybORG compatibility stack is confined to `Dockerfile.cyborg`. It pins
+CybORG 3.1 by source revision and its required legacy Gym/NumPy combination,
+without changing the NASim or CyberBattle images. Runtime targets disable the
+network, drop Linux capabilities and mount source/configuration read-only:
+
+```bash
+make cyborg-smoke    # native Scenario1 trajectory + Phase 14-compatible report
+make cyborg-train    # single-agent masked PPO with fixed training seeds
+make cyborg-eval     # frozen deterministic evaluation on disjoint seeds
+make cyborg-verify   # contract/security tests and evidence verifier
+```
+
+CybORG exploit names remain `simulator_vulnerability_id` values and are not
+invented as CVEs. Generated evidence remains under ignored `runs/cyborg/` and
+`results/cyborg/`.
+
 ## Reproducing the environment
 
 ```bash
@@ -193,6 +217,8 @@ src/rlredteam/
   simulator_adapter.py  Common simulator semantic contract and transition schema.
   cyberbattle_adapter.py  AgentKnowledge-only CyberBattleSim chain adapter.
   cyberbattle_study.py  PPO train/evaluate/report/provenance orchestration.
+  cyborg_adapter.py  Observable-only CybORG Scenario1 semantic adapter.
+  cyborg_study.py  MaskablePPO train/evaluate/report/provenance orchestration.
   enterprise/        Hidden truth, agent knowledge, observations and on-prem simulator.
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
