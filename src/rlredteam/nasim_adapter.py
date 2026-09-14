@@ -13,6 +13,7 @@ Two NASim facts drive the design, both verified against nasim 0.12.0:
 from __future__ import annotations
 
 import gymnasium as gym
+import numpy as np
 from nasim.envs.action import (
     Exploit,
     NoOp,
@@ -25,8 +26,16 @@ from nasim.envs.action import (
 
 from rlredteam.assign import Assignment, assign_cves
 from rlredteam.catalogue import CVECatalogue
+from rlredteam.enterprise.model import NodeType
+from rlredteam.enterprise.state import AgentKnowledge
 from rlredteam.events import AccessLevel, ActionKind, AttackEvent
 from rlredteam.reward import RewardBreakdown, RewardConfig, RewardEngine
+from rlredteam.simulator_adapter import (
+    KnowledgeDelta,
+    SemanticAction,
+    SimulatorAdapter,
+    SimulatorTransition,
+)
 
 _ACTION_KIND: dict[type, ActionKind] = {
     Exploit: ActionKind.EXPLOIT,
@@ -232,3 +241,132 @@ class RewardWrapper(gym.Wrapper):
         info["reward_breakdown"] = breakdown
         info["attack_event"] = event
         return obs, breakdown.total, done, step_limit_reached, info
+
+
+class NASimSimulatorAdapter(SimulatorAdapter):
+    """Additive common-contract facade over the frozen NASim reward wrapper.
+
+    Existing training and evaluation continue to use :class:`RewardWrapper`
+    directly.  This facade proves NASim and other simulators can expose the
+    same semantic boundary without altering the frozen NASim execution path.
+    """
+
+    def __init__(self, environment: RewardWrapper) -> None:
+        self.environment = environment
+        self._knowledge = AgentKnowledge()
+        self._catalogue = self._build_action_catalogue()
+
+    @property
+    def agent_knowledge(self) -> AgentKnowledge:
+        return self._knowledge
+
+    @property
+    def action_space(self):
+        return self.environment.action_space
+
+    @property
+    def observation_space(self):
+        return self.environment.observation_space
+
+    def _build_action_catalogue(self) -> tuple[SemanticAction, ...]:
+        rows: list[SemanticAction] = []
+        for index in range(int(self.environment.action_space.n)):
+            action = self.environment.action_space.get_action(index)
+            kind = self.environment.adapter.kind_of(action)
+            rows.append(
+                SemanticAction(
+                    index=index,
+                    native_kind=type(action).__name__,
+                    simulator_action=str(action.name),
+                    semantic_behavior=str(kind),
+                )
+            )
+        return tuple(rows)
+
+    def action_catalogue(self) -> tuple[SemanticAction, ...]:
+        return self._catalogue
+
+    def action_mask(self) -> np.ndarray | None:
+        return None
+
+    def convert_observation(self, native_observation) -> np.ndarray:
+        return np.asarray(native_observation, dtype=np.float32).reshape(-1).copy()
+
+    def reset(self, *, seed: int | None = None):
+        self._knowledge = AgentKnowledge()
+        observation, info = self.environment.reset(seed=seed)
+        return self.convert_observation(observation), dict(info)
+
+    def update_agent_knowledge(
+        self, native_observation, *, native_info=None
+    ) -> KnowledgeDelta:
+        del native_observation
+        info = dict(native_info or {})
+        event = info.get("attack_event")
+        if not isinstance(event, AttackEvent):
+            return KnowledgeDelta()
+
+        before_nodes = set(self._knowledge.discovered)
+        before_access = dict(self._knowledge.access)
+        target = event.target
+        if isinstance(target, tuple) and event.success:
+            node_id = f"nasim:{target[0]}.{target[1]}"
+            self._knowledge.discover(node_id, NodeType.HOST, reachable=True)
+            if event.kind.is_scan:
+                self._knowledge.enumerated.add(node_id)
+            if event.access_gained > AccessLevel.NONE:
+                self._knowledge.access[node_id] = (
+                    "root" if event.access_gained is AccessLevel.ROOT else "user"
+                )
+            if event.cve_id:
+                self._knowledge.learn_vulnerability(
+                    event.cve_id,
+                    node_id,
+                    grants_access_to=node_id,
+                    privilege=self._knowledge.access.get(node_id, "user"),
+                )
+
+        new_nodes = tuple(sorted(self._knowledge.discovered - before_nodes))
+        changed_access = tuple(
+            sorted(
+                (node, level)
+                for node, level in self._knowledge.access.items()
+                if before_access.get(node) != level
+            )
+        )
+        return KnowledgeDelta(discovered_nodes=new_nodes, access_changes=changed_access)
+
+    def native_result_to_event(self, native_result):
+        event = native_result.get("attack_event")
+        if not isinstance(event, AttackEvent):
+            raise AdapterError("NASim result does not contain a normalised attack event")
+        return event, str(event.kind)
+
+    def step(self, action: int):
+        index = int(action)
+        if not 0 <= index < len(self._catalogue):
+            raise ValueError(f"action {index} outside common NASim catalogue")
+        observation, reward, terminated, truncated, info = self.environment.step(index)
+        event, behavior = self.native_result_to_event(info)
+        delta = self.update_agent_knowledge(observation, native_info=info)
+        transition = SimulatorTransition(
+            observation=self.convert_observation(observation),
+            reward=float(reward),
+            terminated=bool(terminated),
+            truncated=bool(truncated),
+            event=event,
+            action=self._catalogue[index],
+            semantic_behavior=behavior,
+            simulator_action=event.action_name,
+            simulator_vulnerability_id=None,
+            knowledge_delta=delta,
+        )
+        output_info = dict(info)
+        output_info["simulator_transition"] = transition
+        return (
+            transition.observation,
+            transition.reward,
+            transition.terminated,
+            transition.truncated,
+            output_info,
+        )

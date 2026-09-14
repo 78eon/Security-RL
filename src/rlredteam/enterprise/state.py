@@ -33,6 +33,11 @@ class AgentKnowledge:
     credentials: set[str] = field(default_factory=set)
     access: dict[str, str] = field(default_factory=dict)
     accessed_assets: set[str] = field(default_factory=set)
+    # Optional simulator-neutral facts.  They remain empty in all existing
+    # enterprise/NASim experiments, preserving their state keys and outputs.
+    known_properties: dict[str, set[str]] = field(default_factory=dict)
+    known_services: dict[str, set[str]] = field(default_factory=dict)
+    known_native_vulnerabilities: dict[str, set[str]] = field(default_factory=dict)
 
     def discover(self, node_id: str, node_type: NodeType, *, reachable: bool = False) -> None:
         if node_id not in self.discovered:
@@ -46,6 +51,21 @@ class AgentKnowledge:
         if source not in self.discovered or target not in self.discovered:
             raise ValueError("both edge endpoints must be discovered before revealing an edge")
         self.known_edges.add((source, target, edge_type))
+
+    def learn_property(self, node_id: str, property_name: str) -> None:
+        if node_id not in self.discovered:
+            raise ValueError("a property owner must be discovered first")
+        self.known_properties.setdefault(node_id, set()).add(property_name)
+
+    def learn_service(self, node_id: str, service_name: str) -> None:
+        if node_id not in self.discovered:
+            raise ValueError("a service owner must be discovered first")
+        self.known_services.setdefault(node_id, set()).add(service_name)
+
+    def learn_native_vulnerability(self, node_id: str, vulnerability_id: str) -> None:
+        if node_id not in self.discovered:
+            raise ValueError("a vulnerability owner must be discovered first")
+        self.known_native_vulnerabilities.setdefault(node_id, set()).add(vulnerability_id)
 
     def learn_vulnerability(
         self,
@@ -85,7 +105,7 @@ class AgentKnowledge:
 
     def snapshot(self) -> tuple:
         """Hashable research/debug snapshot of all agent-visible state."""
-        return (
+        existing = (
             frozenset(self.discovered),
             tuple(self.discovery_order),
             tuple(
@@ -111,6 +131,34 @@ class AgentKnowledge:
             frozenset(self.credentials),
             tuple(sorted(self.access.items())),
             frozenset(self.accessed_assets),
+        )
+        # Existing environments never populate these fields, so their frozen
+        # snapshots retain exactly the old tuple shape and values.
+        if not (
+            self.known_properties
+            or self.known_services
+            or self.known_native_vulnerabilities
+        ):
+            return existing
+        return existing + (
+            tuple(
+                sorted(
+                    (node, tuple(sorted(values)))
+                    for node, values in self.known_properties.items()
+                )
+            ),
+            tuple(
+                sorted(
+                    (node, tuple(sorted(values)))
+                    for node, values in self.known_services.items()
+                )
+            ),
+            tuple(
+                sorted(
+                    (node, tuple(sorted(values)))
+                    for node, values in self.known_native_vulnerabilities.items()
+                )
+            ),
         )
 
 

@@ -1,0 +1,21 @@
+# CyberBattleSim integration image.  This is deliberately derived from, rather
+# than merged into, the frozen NASim runtime.  The adapter contains the narrow
+# NumPy 2 construction shim needed by upstream 0.1.0, so the numerical stack
+# inherited from Security-RL remains unchanged.
+FROM localhost/sourcecode_app:latest
+
+USER root
+
+RUN pip install --no-cache-dir \
+        boolean.py==4.0 \
+        networkx==3.4.2 \
+        plotly==5.15.0 \
+        tabulate==0.8.10 \
+        progressbar2==4.4.2 \
+        decorator==4.3.0 \
+        zipp==3.19.1 \
+        ipython==8.18.1 \
+    && pip install --no-cache-dir --no-deps \
+        git+https://github.com/microsoft/CyberBattleSim.git@aebf185ab0a7515f983ee696cb7b71d3fdcd107f
+
+USER 10001:10001

@@ -1,0 +1,33 @@
+schema_version: security-rl-cyberbattle-study-v1
+simulator: CyberBattleSim
+simulator_source_revision: aebf185ab0a7515f983ee696cb7b71d3fdcd107f
+
+train_scenario:
+  name: CyberBattleChain-v0
+  size: 2
+  maximum_node_count: 6
+  maximum_total_credentials: 6
+  max_steps: 64
+  failure_penalty: -1.0
+
+held_out_scenario:
+  name: CyberBattleChain-v0
+  size: 4
+  maximum_node_count: 6
+  maximum_total_credentials: 6
+  max_steps: 96
+  failure_penalty: -1.0
+
+train_seeds: [1101, 1102, 1103]
+evaluation_seeds: [2101, 2102, 2103, 2104, 2105]
+
+ppo:
+  total_timesteps: 32768
+  learning_rate: 0.0003
+  n_steps: 128
+  batch_size: 64
+  n_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  ent_coef: 0.02
+  device: cpu

@@ -126,6 +126,33 @@ from recorded paths, while **mitigation effect** is measured by frozen-policy re
 effect is specific to the checkpoint, topology, intervention and evaluation seeds; it does
 not claim that disabling a CVE blocks every possible attack.
 
+## CyberBattleSim adapter
+
+CyberBattleSim is an additive second simulator backend; NASim remains the fixed experimental
+control. Both adapters implement `SimulatorAdapter`, which keeps native actions, Security-RL
+semantic events, catalogue-derived MITRE mappings and reports as separate layers. The initial
+scope is intentionally small: a chain of four nodes for training and a held-out six-node chain
+for deterministic evaluation.
+
+CyberBattleSim's native vulnerability labels are recorded as
+`simulator_vulnerability_id`. They are never promoted to a CVE unless the simulator provides a
+real CVE identifier. PPO receives only an `AgentKnowledge` encoding and the simulator-visible
+action mask; hidden topology is not part of its observation.
+
+Run the complete integration through its isolated, network-disabled Podman runtime:
+
+```bash
+make cyberbattle-smoke    # successful native trajectory + Phase 14-compatible report
+make cyberbattle-train    # independent standard PPO checkpoint
+make cyberbattle-eval     # frozen deterministic evaluation on held-out seeds/scenario
+make cyberbattle-verify   # adapter tests and evidence verifier
+```
+
+The CyberBattle image inherits Security-RL's numerical stack and applies a narrowly scoped
+compatibility shim for an upstream NumPy 2 construction call. It does not alter the main NASim
+image. Generated checkpoints and reports remain under ignored `runs/cyberbattle/` and
+`results/cyberbattle/`.
+
 ## Reproducing the environment
 
 ```bash
@@ -162,7 +189,10 @@ src/rlredteam/
   assign.py          Seeded stratified CVE assignment for generated topologies.
   reward.py          The reward engine: shaped / sparse / native modes.
   topology.py        Seeded nasim.generate wrapper + config hashing.
-  nasim_adapter.py   The only module that knows about both NASim and the reward core.
+  nasim_adapter.py   NASim reward bridge and common-contract facade.
+  simulator_adapter.py  Common simulator semantic contract and transition schema.
+  cyberbattle_adapter.py  AgentKnowledge-only CyberBattleSim chain adapter.
+  cyberbattle_study.py  PPO train/evaluate/report/provenance orchestration.
   enterprise/        Hidden truth, agent knowledge, observations and on-prem simulator.
   train.py           PPO entry point: seeding, episode collection, logging.
   storage/           Module 4: PostgreSQL schema and batched episode logger.
@@ -186,7 +216,7 @@ runs/                checkpoints and artefacts. GITIGNORED (see below).
 ```
 
 The reward core imports no nasim, gymnasium or torch, so it is testable without an
-environment. All environment-specific code lives in `nasim_adapter.py`.
+environment. Simulator-specific code remains isolated in the NASim and CyberBattle adapters.
 
 ## Responsible research
 
