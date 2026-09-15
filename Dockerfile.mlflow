@@ -1,0 +1,9 @@
+# Phase 21 observability image. MLflow is intentionally absent from the
+# canonical training environment so historical dependency locks remain valid.
+FROM localhost/sourcecode_app:latest
+
+USER root
+RUN pip install --no-cache-dir mlflow==3.16.0 \
+    && mkdir -p /mlflow \
+    && chown 10001:10001 /mlflow
+USER 10001:10001

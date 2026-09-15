@@ -1,0 +1,44 @@
+# Optional Phase 21 mirror. PostgreSQL/CSV/JSON remain authoritative.
+services:
+  mlflow:
+    image: localhost/security-rl-mlflow:latest
+    command:
+      - mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --workers
+      - "1"
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --default-artifact-root
+      - /mlflow/artifacts
+      - --allowed-hosts
+      - mlflow:5000,localhost,127.0.0.1
+    user: "10001:10001"
+    environment:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflowdata:/mlflow
+    networks: [rlredteam-internal]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 1g
+    stop_grace_period: 30s
+
+volumes:
+  mlflowdata:

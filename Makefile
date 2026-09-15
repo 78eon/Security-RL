@@ -1,6 +1,7 @@
 .PHONY: help build gui gui-build gui-test phase19-report phase19-verify reward-components-freeze reward-components-dry-run reward-components-run reward-components-verify cyborg-build cyborg-dirs cyborg-smoke cyborg-train cyborg-eval cyborg-verify cyberbattle-build cyberbattle-dirs cyberbattle-smoke cyberbattle-train cyberbattle-eval cyberbattle-verify phase14-report phase14-verify phase15-report phase15-verify recurrent-freeze recurrent-dry-run recurrent-dev recurrent-run recurrent-verify curriculum-freeze curriculum-dry-run curriculum-dev curriculum-run curriculum-verify graph-freeze graph-dry-run graph-dev graph-run graph-verify transfer-freeze transfer-dry-run transfer-dev transfer-run transfer-verify hierarchical-freeze hierarchical-dry-run hierarchical-dev hierarchical-run hierarchical-verify multiagent-freeze multiagent-dry-run multiagent-dev multiagent-run multiagent-verify onprem-train onprem-eval onprem-verify infrastructure-train infrastructure-eval hybrid-smoke hybrid-train hybrid-eval lab-build lab-plan lab-scan test test-fast test-slow test-one lint db-up db-down db-summary db-shell rollout enterprise-demo onprem-demo train train-sparse experiment-freeze experiment-dry-run experiment catalogue manifest verify-nvd clean
 
 .PHONY: neo4j-build neo4j-up neo4j-down neo4j-export neo4j-analyze neo4j-verify
+.PHONY: mlflow-build mlflow-up mlflow-down mlflow-sync mlflow-verify
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)
@@ -27,6 +28,26 @@ NEO4J_RUN := podman run --rm --network sourcecode_rlredteam-internal \
 	-v "$(CURDIR)/Dockerfile.neo4j:/app/Dockerfile.neo4j:ro,z" \
 	-v "$(CURDIR)/pyproject.toml:/app/pyproject.toml:ro,z" \
 	-v "$(CURDIR)/results:/app/results:rw,z" -w /app $(NEO4J_CLIENT_IMAGE)
+MLFLOW_COMPOSE := podman compose -f docker-compose.yml -f docker-compose.mlflow.yml
+MLFLOW_IMAGE := localhost/security-rl-mlflow:latest
+MLFLOW_RUN := podman run --rm --network sourcecode_rlredteam-internal \
+	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
+	-e PYTHONHASHSEED=0 -e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
+	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+	-e MLFLOW_TRACKING_URI=http://mlflow:5000 -e MLFLOW_EXPERIMENT_PREFIX \
+	-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
+	-v "$(CURDIR)/src:/app/src:ro,z" \
+	-v "$(CURDIR)/tests:/app/tests:ro,z" \
+	-v "$(CURDIR)/scripts:/app/scripts:ro,z" \
+	-v "$(CURDIR)/configs:/app/configs:ro,z" \
+	-v "$(CURDIR)/data:/app/data:ro,z" \
+	-v "$(CURDIR)/.git:/app/.git:ro,z" \
+	-v "$(CURDIR)/docker-compose.yml:/app/docker-compose.yml:ro,z" \
+	-v "$(CURDIR)/docker-compose.mlflow.yml:/app/docker-compose.mlflow.yml:ro,z" \
+	-v "$(CURDIR)/Dockerfile.mlflow:/app/Dockerfile.mlflow:ro,z" \
+	-v "$(CURDIR)/pyproject.toml:/app/pyproject.toml:ro,z" \
+	-v "$(CURDIR)/runs:/app/runs:ro,z" \
+	-v "$(CURDIR)/results:/app/results:rw,z" -w /app $(MLFLOW_IMAGE)
 CYBERBATTLE_IMAGE := localhost/security-rl-cyberbattle:latest
 CYBERBATTLE_RUN := podman run --rm --network none --cap-drop=all \
 	--security-opt=no-new-privileges --user 0:0 \
@@ -262,6 +283,25 @@ neo4j-verify: neo4j-up ## Verify source integrity, projection and analysis end t
 		tests/test_neo4j_projection.py tests/test_neo4j_security.py \
 		tests/test_neo4j_integration.py
 	set -a; . ./.env; set +a; $(NEO4J_RUN) python scripts/verify_neo4j_completion.py
+
+mlflow-build: ## Build the pinned, dependency-isolated MLflow image
+	podman image exists localhost/sourcecode_app:latest || $(COMPOSE) build app
+	podman build -t $(MLFLOW_IMAGE) -f Dockerfile.mlflow .
+
+mlflow-up: mlflow-build ## Start optional loopback-only MLflow observability
+	$(MLFLOW_COMPOSE) up -d postgres mlflow
+
+mlflow-down: ## Stop Phase 21 services without deleting mirror/database volumes
+	$(MLFLOW_COMPOSE) down
+
+mlflow-sync: mlflow-up ## Mirror recent PostgreSQL runs into MLflow
+	set -a; . ./.env; set +a; $(MLFLOW_RUN) python scripts/sync_mlflow_observability.py
+
+mlflow-verify: mlflow-up ## Verify idempotence and authoritative-source immutability
+	set -a; . ./.env; set +a; $(MLFLOW_RUN) pytest -q -p no:cacheprovider \
+		tests/test_mlflow_observability.py tests/test_mlflow_security.py \
+		tests/test_mlflow_integration.py
+	set -a; . ./.env; set +a; $(MLFLOW_RUN) python scripts/verify_mlflow_completion.py
 
 lab-build:      ## Build the unprivileged isolated-range discovery image
 	podman build -t rlredteam-lab -f Dockerfile.lab .

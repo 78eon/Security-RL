@@ -223,6 +223,18 @@ make neo4j-analyze   # path, bottleneck, centrality and MITRE analyses
 make neo4j-verify    # idempotence, source integrity and live Podman checks
 ```
 
+## MLflow observability mirror
+
+Phase 21 mirrors deterministic PostgreSQL run summaries, experiment parameters,
+hashes and canonical artifact references into an optional MLflow service.
+PostgreSQL and the canonical files remain authoritative; the training image has
+no MLflow dependency and canonical checkpoints/results are never uploaded.
+
+```bash
+make mlflow-sync     # mirror recent PostgreSQL runs
+make mlflow-verify   # verify idempotence and source immutability
+```
+
 ## Reproducing the environment
 
 ```bash
