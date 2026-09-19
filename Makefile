@@ -2,6 +2,59 @@
 
 .PHONY: neo4j-build neo4j-up neo4j-down neo4j-export neo4j-analyze neo4j-verify
 .PHONY: mlflow-build mlflow-up mlflow-down mlflow-sync mlflow-verify
+.PHONY: convergence-dirs convergence-1m-freeze convergence-1m-run convergence-1m-analyze convergence-normalized-freeze convergence-normalized-run convergence-normalized-analyze convergence-verify convergence-sparse-run convergence-evaluate reproducibility-check
+
+# Historical evidence is read-only. Only the NEW convergence namespace is writable.
+CONVERGENCE_CONFIG ?= configs/experiments/experiment_01_convergence_1m.yaml
+CONVERGENCE_NORMALIZED := configs/experiments/experiment_01_convergence_normalized_1m.yaml
+CONVERGENCE_RUN = podman run --rm --network sourcecode_rlredteam-internal \
+	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
+	--tmpfs /app/runs:rw,mode=1777 \
+	-e PYTHONHASHSEED=0 -e MPLCONFIGDIR=/tmp/matplotlib \
+	-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
+	-e RLREDTEAM_GIT_DIRTY="$(RLREDTEAM_GIT_DIRTY)" \
+	-e RLREDTEAM_IMAGE_DIGEST="$$(podman image inspect localhost/sourcecode_app:latest --format '{{.Id}}')" \
+	-e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
+	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+	-v "$(CURDIR):/app:ro,z" \
+	-v "$(CURDIR)/results/convergence_v1:/app/results/convergence_v1:rw,z" \
+	-w /app localhost/sourcecode_app:latest
+
+convergence-dirs: ## Prepare only the new convergence evidence directory
+	podman run --rm --network none --user 10001:10001 \
+		-v "$(CURDIR)/results:/app/results:rw,z" localhost/sourcecode_app:latest \
+		python -c 'from pathlib import Path; Path("/app/results/convergence_v1").mkdir(exist_ok=True)'
+
+convergence-1m-freeze: convergence-dirs ## Preregister inputs/criterion (NOT a convergence claim)
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py freeze --config $(CONVERGENCE_CONFIG)
+
+convergence-1m-run: convergence-dirs db-up ## Explicit LONG run: ten 1M-step shaped seeds
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py run --config $(CONVERGENCE_CONFIG)
+
+convergence-1m-analyze: convergence-dirs ## Reconstruct formal assessment; freeze first passing config
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py analyze --config $(CONVERGENCE_CONFIG)
+
+convergence-normalized-freeze: convergence-dirs ## Only after baseline assessed and failed
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py freeze --config $(CONVERGENCE_NORMALIZED)
+
+convergence-normalized-run: convergence-dirs db-up ## Explicit LONG reward-normalization comparison
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py run --config $(CONVERGENCE_NORMALIZED)
+
+convergence-normalized-analyze: convergence-dirs ## Assess normalization and compare raw reward curves
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py analyze --config $(CONVERGENCE_NORMALIZED)
+
+convergence-verify: convergence-dirs ## Fast protocol tests; never launch 1M training
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) pytest -q -p no:cacheprovider tests/test_convergence.py tests/test_convergence_runner.py
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py verify --config $(CONVERGENCE_CONFIG)
+
+convergence-sparse-run: convergence-dirs db-up ## Gated matched sparse training, after shaped freeze only
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py sparse-run --config $(CONVERGENCE_CONFIG)
+
+convergence-evaluate: convergence-dirs db-up ## Gated frozen-policy n=10 paired evaluation
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py evaluate --config $(CONVERGENCE_CONFIG)
+
+reproducibility-check: convergence-dirs db-up ## Compute topology SHA and execute Module 0/4 tests, no fixed counts
+	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/check_reproducibility.py
 
 export UID := $(shell id -u)
 export GID := $(shell id -g)

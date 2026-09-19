@@ -1,0 +1,23 @@
+# Explicit operational proposal, not a supervisor-approved numerical definition.
+# Review BEFORE preregistration. Changing this file invalidates the registration.
+schema: security-rl-convergence-criterion-v1
+status: proposed_operational_definition
+window: final_third_of_actual_timesteps
+reward_basis: unnormalised_shaped_episode_return
+min_episodes_per_third: 30
+blocks: 4
+reward_scale_floor: 100.0
+min_initial_to_final_gain_fraction: 0.10
+max_final_block_range_fraction: 0.15
+max_abs_final_slope_fraction: 0.10
+max_late_drop_fraction: 0.15
+min_final_explained_variance: 0.0
+min_explained_variance_slope: -0.05
+min_passing_seeds: 8
+max_seed_final_mean_range_fraction: 0.35
+smooth_episodes: 20
+diagnostics:
+  high_approx_kl: 0.03
+  high_clip_fraction: 0.20
+  near_zero_explained_variance: 0.05
+  early_entropy_remaining_fraction: 0.20

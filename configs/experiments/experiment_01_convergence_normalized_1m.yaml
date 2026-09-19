@@ -1,0 +1,36 @@
+schema: security-rl-convergence-v1
+id: experiment_01_convergence_normalized_1m
+stage: normalization
+parent: configs/experiments/experiment_01_convergence_1m.yaml
+reward: shaped
+topology: configs/topology.yaml
+topology_seed: 42
+training_seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+evaluation_seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+total_timesteps: 1000000
+ppo:
+  policy: MlpPolicy
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  device: cpu
+  normalize_advantage: true
+learning_rate_schedule: constant
+normalization:
+  enabled: true
+  norm_obs: false
+  gamma: 0.99
+  epsilon: 0.00000001
+  clip_reward: 10.0
+criterion: configs/convergence_criterion_v1.yaml
+evaluation:
+  action_selection: deterministic
+  postgres: true
+  policy_updates: false

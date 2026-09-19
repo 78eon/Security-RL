@@ -315,6 +315,96 @@ environment. Simulator-specific code remains isolated in the NASim and CyberBatt
 - **The NVD API key lives in `.env`**, which is gitignored, and is read only by
   `tools/fetch_nvd.py`. Training is fully offline.
 
+## Convergence-first PPO protocol
+
+This pipeline is **not evidence of convergence**. No 1M run is launched by tests.
+The new, independent namespace is `results/convergence_v1/`; previous configurations,
+checkpoints and results remain read-only. The unrelated PDF work is not part of this task.
+
+1. Review `configs/convergence_criterion_v1.yaml` with the supervisor, **before**
+   preregistration. Its numeric thresholds are explicit operational proposals, not
+   quoted supervisor requirements. Commit the reviewed config and source; scientific
+   commands refuse a dirty checkout. Keep the same commit and container image for the
+   registered candidate, including its evaluation.
+2. Run `make build` only if the application image is missing, then `make db-up`,
+   `make reproducibility-check` and `make convergence-verify`.
+3. Run `make convergence-1m-freeze` to preregister inputs, not to claim convergence.
+   Then explicitly start `make convergence-1m-run` (ten long runs), followed by
+   `make convergence-1m-analyze`. The first configuration which passes is frozen
+   automatically; no best-of-many checkpoint selection is performed.
+4. Only if all ten baseline runs complete and their aggregate assessment fails:
+   `make convergence-normalized-freeze`, `make convergence-normalized-run`, then
+   `make convergence-normalized-analyze`. This writes a direct baseline/normalised
+   comparison using **original unnormalised shaped episode returns**.
+5. Read the reward and diagnostic time series. If necessary, create an explicitly
+   versioned child config (`stage: tuning`, `parent: <yaml path>`, `factor`, `rationale`).
+   Allowed factors, in order: `learning_rate` (may include `linear_to_zero` schedule),
+   then `n_steps` **or** `batch_size` separately, then `ent_coef`. Other changes,
+   multi-factor changes, missing rationale and stage-skipping are rejected. Use the
+   generic `convergence-1m-*` targets with `CONVERGENCE_CONFIG=<child.yaml>`.
+   Diagnostic advice never launches a sweep or changes a config.
+6. Once `first_stable.json` exists, further tuning is blocked. Set
+   `CONVERGENCE_CONFIG` to that candidate and run `make convergence-sparse-run`, then
+   `make convergence-evaluate`. Both commands are blocked until the shaped gate
+   reconstructs successfully. Sparse is trained with the same hyperparameters and
+   budget; only the reward condition differs. The experimental unit is ten matched
+   **training seeds 42–51**, with ten matched evaluation episodes (seeds 42–51) per
+   policy. These reused seeds are **not held-out generalisation evidence**.
+
+Exact new experiment configs:
+
+- `configs/experiments/experiment_01_convergence_1m.yaml`: unchanged baseline PPO,
+  shaped reward, fixed topology seed 42, training/evaluation seeds 42–51, 1,000,000
+  requested timesteps. PPO completes full 2,048-step rollouts: **1,001,472 actual
+  timesteps**, recorded rather than silently rounded away. Learning rate 0.0003,
+  batch size 64, epochs 10, gamma 0.99, GAE 0.95, clip 0.2, entropy coefficient 0.01.
+- `configs/experiments/experiment_01_convergence_normalized_1m.yaml`: identical PPO,
+  topology, reward and seeds; enables reward-only SB3 `VecNormalize`.
+
+Advantage normalisation is explicitly enabled in both arms (the existing SB3
+default). Reward normalisation uses a running variance of discounted returns
+(`gamma=0.99`, `epsilon=1e-8`):
+`r_train = clip(r_original / sqrt(return_variance + epsilon), -10, 10)`.
+Observations are **never normalised or augmented**. Original shaped/native rewards
+and semantic step records remain in the canonical episode collector/PostgreSQL.
+Each normalised checkpoint saves and hashes `vecnormalize.pkl`. Frozen evaluation
+loads and validates that state, disables updates, and reports untransformed rewards;
+with `norm_obs=false`, policy input is exactly the original partial observation.
+The evaluation wrapper forces deterministic action selection, uses no gradients,
+and checks policy hashes and PPO update counts before/after. PostgreSQL and canonical
+CSV/JSON remain authoritative; no new observability backend is introduced.
+Because the historical episode uniqueness key does not include the run ID,
+convergence evaluation uses a separate PostgreSQL experiment linked to its training
+experiment/run and checkpoint hash in notes and canonical metadata. This supports
+reused seeds without altering the old schema or colliding with training episodes.
+
+Assessment schema `security-rl-convergence-assessment-v1` uses **timestep-based**
+thirds, not episode-count thirds. Current proposed limits: at least 30 episodes in
+initial/final thirds; final mean rises by at least 10% of the reward scale; four
+final-third time-block means span at most 15%; absolute final-third OLS slope is
+at most 10%; last-block drop from earlier final blocks is at most 15%. The scale
+is `max(100, abs(final_mean))`. Final-third explained variance must average above
+zero with an OLS change no worse than -0.05 over that third. At least 8/10 seeds
+must pass, with final means spanning at most 35% of the aggregate reward scale.
+These are configurable definitions of plateau/consistency, **not a statistical
+proof of optimality**. Missing evidence fails closed. Diagnostics are collected
+after every PPO update, including the final one, to CSV; missing values are empty,
+not invented zeros. Curves use a trailing 20-episode mean and fixed plot metadata.
+
+Each candidate contains an exclusive-create `registration.json`, `shaped-<seed>/`
+directories with episodes, diagnostics, manifest, policy, optional normalisation
+state and hash-bound completion record; `analysis/` holds per-seed raw/smoothed
+curves, reward/diagnostic PNGs, final-third summaries and aggregate JSON. A passing
+`assessment.json` is reconstructed from raw evidence before `first_stable.json`
+freezes exact config/criterion, commit, source hashes, topology/CVE hashes and every
+checkpoint. Completed runs can be verified/skipped on restart; **partial runs are
+not automatically retrained or overwritten**. Preserve them and resolve recovery
+explicitly. The study lock prevents concurrent writers. Results remain gitignored.
+
+Safe first commands: reproducibility and verification. Long training requires
+reviewed thresholds, a clean committed checkout, PostgreSQL and preregistration.
+No frozen stable candidate or final evaluation result is supplied by implementation.
+
 ## Known limitations
 
 Stated plainly rather than discovered later:
