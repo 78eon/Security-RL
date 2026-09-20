@@ -163,6 +163,16 @@ def test_missing_seed_and_inconsistent_seed_rewards_fail(criterion):
     assert not assess_all(all_results, criterion)["passed"]
 
 
+def test_flat_final_third_cannot_hide_a_late_drop_from_middle_third(criterion):
+    episodes, rows = evidence()
+    for row in episodes:
+        if 10000 <= row["timesteps"] < 20000:
+            row["shaped_return"] = 200.0
+    result = assess_seed(episodes, rows, actual_steps=30000, budget=30000, criterion=criterion)
+    assert not result["passed"]
+    assert "late collapse" in result["reasons"]
+
+
 def test_advice_is_not_a_sweep(criterion):
     rows = [
         {"approx_kl": 0.1, "clip_fraction": 0.5, "explained_variance": 0.01, "entropy_loss": -1}

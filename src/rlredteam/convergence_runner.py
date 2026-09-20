@@ -704,6 +704,12 @@ def verify_evaluation(out: Path, root: Path, config: dict) -> None:
     for name, value in evidence["files"].items():
         if sha(destination / name) != value:
             raise ConvergenceError("evaluation evidence changed")
+    indexed = {
+        (r["reward_mode"], r["training_seed"], r["evaluation_seed"]): r for r in evidence["rows"]
+    }
+    expected_count = 2 * len(config["training_seeds"]) * len(config["evaluation_seeds"])
+    if len(indexed) != expected_count or len(evidence["rows"]) != expected_count:
+        raise ConvergenceError("matched outcome count/uniqueness mismatch")
     for arm in ("shaped", "sparse"):
         for seed in config["training_seeds"]:
             run_path = out / f"{arm}-{seed}"
@@ -722,6 +728,27 @@ def verify_evaluation(out: Path, root: Path, config: dict) -> None:
             rows = csv_rows(destination / f"{arm}-{seed}/evaluation.csv")
             if [int(r["evaluation_seed"]) for r in rows] != config["evaluation_seeds"]:
                 raise ConvergenceError("evaluation episodes are not paired")
+            steps = [
+                json.loads(line)
+                for line in (destination / f"{arm}-{seed}/steps.jsonl").read_text().splitlines()
+            ]
+            for row in rows:
+                key = (arm, seed, int(row["evaluation_seed"]))
+                item = indexed.get(key)
+                if (
+                    item is None
+                    or {k: "" if item.get(k) is None else str(item[k]) for k in row} != row
+                ):
+                    raise ConvergenceError("matched outcomes do not reconstruct from CSV")
+                crown = any(
+                    s["evaluation_seed"] == key[2]
+                    and s["is_crown_jewel"]
+                    and s["success"]
+                    and s["access_gained"] > 0
+                    for s in steps
+                )
+                if item["crown_jewel_reach"] is not crown:
+                    raise ConvergenceError("crown-jewel outcome lacks step evidence")
 
 
 def verify(config_path: Path, root: Path) -> dict:

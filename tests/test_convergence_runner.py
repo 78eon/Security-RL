@@ -168,6 +168,38 @@ def test_diagnostic_ppo_does_not_change_optimizer_algorithm():
     assert issubclass(EpisodeCollector, object)
 
 
+def test_short_evaluation_pipeline_reconstructs_matched_evidence(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from rlredteam import convergence_runner as runner
+    from rlredteam.convergence import read_json, write_new
+
+    # Disposable 32-step fixture, not a converged policy or research result.
+    topology = replace(TopologyConfig.from_yaml(), step_limit=8)
+    monkeypatch.setattr(runner.TopologyConfig, "from_yaml", lambda: topology)
+    c = small_config(True)
+    c.update(training_seeds=[42], evaluation_seeds=[42, 43])
+    out = tmp_path / c["id"]
+    out.mkdir()
+    for arm in ("shaped", "sparse"):
+        _train_one(c, 42, out / f"{arm}-42", postgres=False, reward_mode=arm)
+    write_new(tmp_path / "first_stable.json", {"test_fixture_only": True})
+    monkeypatch.setattr(runner, "require_frozen", lambda *_: None)
+    monkeypatch.setattr(runner, "verify_registration", lambda *_: ({"config": c}, out))
+    monkeypatch.setattr(runner, "persist_evaluation", lambda *_: {"test_fixture_only": True})
+    runner.evaluate(BASE_CONFIG, tmp_path)
+    runner.verify_evaluation(out, tmp_path, c)
+    path = out / "final-evaluation/matched_outcomes.json"
+    evidence = read_json(path)
+    assert len(evidence["rows"]) == 4
+    evidence["rows"][0]["policy_return"] += 100
+    import json
+
+    path.write_text(json.dumps(evidence))
+    with pytest.raises(ConvergenceError, match="reconstruct"):
+        runner.verify_evaluation(out, tmp_path, c)
+
+
 def test_freeze_binds_metadata_and_blocks_tampering(tmp_path, monkeypatch):
     from rlredteam import convergence_runner as runner
     from rlredteam.convergence import SEEDS, read_json, write_new

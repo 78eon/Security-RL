@@ -11,6 +11,7 @@ min_initial_to_final_gain_fraction: 0.10
 max_final_block_range_fraction: 0.15
 max_abs_final_slope_fraction: 0.10
 max_late_drop_fraction: 0.15
+late_collapse_reference: middle_and_final_third_blocks
 min_final_explained_variance: 0.0
 min_explained_variance_slope: -0.05
 min_passing_seeds: 8

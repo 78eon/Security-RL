@@ -176,6 +176,8 @@ def load_criterion(path: Path) -> dict:
         or c["reward_basis"] != "unnormalised_shaped_episode_return"
     ):
         raise ConvergenceError("unsupported convergence window/reward basis")
+    if c["late_collapse_reference"] != "middle_and_final_third_blocks":
+        raise ConvergenceError("unsupported late-collapse reference")
     for name, value in c.items():
         if isinstance(value, int | float) and not math.isfinite(value):
             raise ConvergenceError(f"non-finite criterion: {name}")
@@ -258,7 +260,22 @@ def assess_seed(
     means = [float(np.mean(block)) for block in blocks]
     slope = float(np.polyfit(x, final, 1)[0]) / scale
     gain = (float(np.mean(final)) - float(np.mean(first))) / scale
-    late_drop = max(0.0, max(means[:-1]) - means[-1]) / scale
+    # A lower but flat final third must not hide a collapse at its boundary.
+    middle_mask = (times >= actual_steps / 3) & (times < 2 * actual_steps / 3)
+    middle = rewards[middle_mask]
+    middle_x = (times[middle_mask] - actual_steps / 3) / (actual_steps / 3)
+    middle_blocks = [
+        middle[(middle_x >= low) & (middle_x < high)]
+        for low, high in zip(
+            np.linspace(0, 1, c["blocks"] + 1)[:-1],
+            np.linspace(0, 1, c["blocks"] + 1)[1:],
+            strict=True,
+        )
+    ]
+    if any(len(block) == 0 for block in middle_blocks):
+        return {"passed": False, "reasons": reasons + ["empty middle-third time block"]}
+    reference = max([float(np.mean(block)) for block in middle_blocks] + means[:-1])
+    late_drop = max(0.0, reference - means[-1]) / scale
     checks = {
         "reward did not rise": gain >= c["min_initial_to_final_gain_fraction"],
         "final-third block range not plateaued": (max(means) - min(means)) / scale
@@ -300,7 +317,11 @@ def assess_seed(
         },
         "initial_to_final_gain_fraction": gain,
         "explained_variance": {"final_mean": ev_mean, "final_slope": ev_slope},
-        "late_collapse": {"drop_fraction": late_drop, "passed": checks["late collapse"]},
+        "late_collapse": {
+            "drop_fraction": late_drop,
+            "passed": checks["late collapse"],
+            "reference_block_mean": reference,
+        },
     }
 
 

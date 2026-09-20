@@ -382,7 +382,8 @@ Assessment schema `security-rl-convergence-assessment-v1` uses **timestep-based*
 thirds, not episode-count thirds. Current proposed limits: at least 30 episodes in
 initial/final thirds; final mean rises by at least 10% of the reward scale; four
 final-third time-block means span at most 15%; absolute final-third OLS slope is
-at most 10%; last-block drop from earlier final blocks is at most 15%. The scale
+at most 10%; last-block drop from earlier middle/final-third blocks is at most 15%
+(a lower but flat final third cannot hide a boundary collapse). The scale
 is `max(100, abs(final_mean))`. Final-third explained variance must average above
 zero with an OLS change no worse than -0.05 over that third. At least 8/10 seeds
 must pass, with final means spanning at most 35% of the aggregate reward scale.
