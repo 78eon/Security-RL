@@ -51,6 +51,7 @@ def test_real_short_ppo_updates_saved_without_missing_final_update(tmp_path, nor
     result = _train_one(c, 42, out, postgres=False)
     assert result["actual_timesteps"] == 32
     assert result["gradient_updates"] == 4
+    assert result["status"] == "complete" and result["elapsed_seconds"] > 0
     rows = csv_rows(out / "diagnostics.csv")
     assert [int(row["timesteps"]) for row in rows] == [16, 32]
     assert all(row["approx_kl"] and row["learning_rate"] for row in rows)
@@ -264,7 +265,7 @@ def test_registration_is_immutable_and_parent_cannot_run_early(tmp_path, monkeyp
     checked, out = runner.verify_registration(BASE_CONFIG, tmp_path)
     assert checked == registered
     original = sha(out / "registration.json")
-    normalized = ROOT / "configs/experiments/experiment_01_convergence_normalized_1m.yaml"
+    normalized = ROOT / "configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml"
     with pytest.raises(ConvergenceError, match="assessment"):
         runner.register(normalized, tmp_path)
     with pytest.raises(ConvergenceError, match="assessment"):
@@ -288,7 +289,7 @@ def test_analysis_artifacts_byte_deterministic(tmp_path):
 
     c = small_config()
     c["training_seeds"] = [42]
-    criterion = load_criterion(ROOT / "configs/convergence_criterion_v1.yaml")
+    criterion = load_criterion(ROOT / "configs/convergence_criterion_v2.yaml")
     for name in ("first", "second"):
         out = tmp_path / name
         out.mkdir()
@@ -308,6 +309,34 @@ def test_analysis_artifacts_byte_deterministic(tmp_path):
     second = {p.name: sha(p) for p in (tmp_path / "second/analysis").iterdir()}
     assert first == second
     assert "seed-42-diagnostics.png" in first
+    assert "aggregate-reward.png" in first and "aggregate-reward.json" in first
+
+
+def test_frozen_protocol_forwards_stochastic_selection_and_seed():
+    from rlredteam.convergence_runner import FrozenProtocolPolicy
+
+    class Spy:
+        def set_random_seed(self, seed):
+            self.seed = seed
+
+        def predict(self, obs, deterministic):
+            assert self.seed == 1001
+            assert deterministic is False
+            return 0, None
+
+    policy = FrozenProtocolPolicy(Spy(), "stochastic")
+    policy.set_random_seed(1001)
+    policy.predict(np.zeros(234))
+
+
+def test_diagnostic_summaries_keep_missing_values_explicit():
+    from rlredteam.convergence_runner import summarize_diagnostics
+
+    rows = [{"timesteps": 100, "approx_kl": 0.1}, {"timesteps": 300, "approx_kl": 0.2}]
+    summary = summarize_diagnostics(rows, 300)
+    assert summary["approx_kl"]["final_third_mean"] == 0.2
+    assert summary["value_loss"]["mean"] is None
+    assert summary["value_loss"]["missing_updates"] == 2
 
 
 def test_first_passing_candidate_cannot_be_skipped(tmp_path, monkeypatch):

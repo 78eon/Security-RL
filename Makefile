@@ -5,10 +5,11 @@
 .PHONY: convergence-dirs convergence-1m-freeze convergence-1m-run convergence-1m-analyze convergence-normalized-freeze convergence-normalized-run convergence-normalized-analyze convergence-verify convergence-sparse-run convergence-evaluate reproducibility-check
 
 # Historical evidence is read-only. Only the NEW convergence namespace is writable.
-CONVERGENCE_CONFIG ?= configs/experiments/experiment_01_convergence_1m.yaml
-CONVERGENCE_NORMALIZED := configs/experiments/experiment_01_convergence_normalized_1m.yaml
+CONVERGENCE_CONFIG ?= configs/experiments/experiment_01_convergence_1m_v2.yaml
+CONVERGENCE_NORMALIZED := configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml
 CONVERGENCE_RUN = podman run --rm --network sourcecode_rlredteam-internal \
 	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
+	--memory=12g --pids-limit=512 \
 	--tmpfs /app/runs:rw,mode=1777 \
 	-e PYTHONHASHSEED=0 -e MPLCONFIGDIR=/tmp/matplotlib \
 	-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
@@ -17,13 +18,13 @@ CONVERGENCE_RUN = podman run --rm --network sourcecode_rlredteam-internal \
 	-e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
 	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
 	-v "$(CURDIR):/app:ro,z" \
-	-v "$(CURDIR)/results/convergence_v1:/app/results/convergence_v1:rw,z" \
+	-v "$(CURDIR)/results/convergence_v2:/app/results/convergence_v2:rw,z" \
 	-w /app localhost/sourcecode_app:latest
 
 convergence-dirs: ## Prepare only the new convergence evidence directory
 	podman run --rm --network none --user 10001:10001 \
 		-v "$(CURDIR)/results:/app/results:rw,z" localhost/sourcecode_app:latest \
-		python -c 'from pathlib import Path; Path("/app/results/convergence_v1").mkdir(exist_ok=True)'
+		python -c 'from pathlib import Path; Path("/app/results/convergence_v2").mkdir(exist_ok=True)'
 
 convergence-1m-freeze: convergence-dirs ## Preregister inputs/criterion (NOT a convergence claim)
 	set -a; . ./.env; set +a; $(CONVERGENCE_RUN) python scripts/run_convergence.py freeze --config $(CONVERGENCE_CONFIG)

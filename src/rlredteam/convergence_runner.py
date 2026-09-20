@@ -10,6 +10,7 @@ import csv
 import fcntl
 import json
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from rlredteam.catalogue import CVECatalogue
 from rlredteam.convergence import (
     DIAGNOSTICS,
     ROOT,
+    SCHEMA,
     ConvergenceError,
     assess_all,
     assess_seed,
@@ -42,7 +44,7 @@ from rlredteam.reward import RewardConfig
 from rlredteam.topology import TopologyConfig, describe, make_env
 from rlredteam.train import EpisodeCollector, build_env, linear_learning_rate, set_all_seeds
 
-DEFAULT_OUTPUT = ROOT / "results/convergence_v1"
+DEFAULT_OUTPUT = ROOT / "results/convergence_v2"
 
 
 @contextmanager
@@ -97,6 +99,8 @@ def require_clean() -> None:
 def register(config_path: Path, root: Path) -> dict:
     require_clean()
     c = load_config(config_path)
+    if c["schema"] != SCHEMA:
+        raise ConvergenceError("superseded execution protocol; use the approved v2 configuration")
     if (root / "first_stable.json").exists():
         raise ConvergenceError("first stable candidate already frozen; tuning is closed")
     registrations = sorted(root.glob("*/registration.json"))
@@ -188,6 +192,7 @@ def normalized_environment(env, config: dict):
 def _train_one(c: dict, seed: int, out: Path, *, postgres: bool, reward_mode="shaped") -> dict:
     """Private small-run seam for tests; public run always enforces full protocol."""
     out.mkdir(exist_ok=False)
+    started = time.monotonic()
     set_all_seeds(seed)
     reward = RewardConfig.from_yaml(ROOT / f"configs/{reward_mode}.yaml")
     catalogue = CVECatalogue.open_default()
@@ -269,6 +274,8 @@ def _train_one(c: dict, seed: int, out: Path, *, postgres: bool, reward_mode="sh
             "normalization": c["normalization"],
             "files": {p.name: sha(p) for p in sorted(out.iterdir()) if p.is_file()},
         }
+        if c["schema"] == SCHEMA:
+            result.update(status="complete", elapsed_seconds=time.monotonic() - started)
         if logger:
             logger.flush()
             logger.finish("complete")
@@ -343,7 +350,12 @@ def run(config_path: Path, root: Path, *, sparse=False) -> None:
             print(f"verified existing {condition} seed {seed}; not retrained", flush=True)
             continue
         print(f"starting {condition} seed {seed}: {c['total_timesteps']} timesteps", flush=True)
-        _train_one(c, seed, path, postgres=True, reward_mode=condition)
+        result = _train_one(c, seed, path, postgres=True, reward_mode=condition)
+        print(
+            f"completed {condition} seed {seed}: "
+            f"{result.get('elapsed_seconds', 'unknown')} seconds",
+            flush=True,
+        )
 
 
 def compute_assessment(out: Path) -> dict:
@@ -362,6 +374,10 @@ def compute_assessment(out: Path) -> dict:
             criterion=criterion,
         )
         per_seed[str(seed)]["diagnostic_advice"] = diagnostic_advice(rows, criterion)
+        if c["schema"] == SCHEMA:
+            per_seed[str(seed)]["diagnostic_summaries"] = summarize_diagnostics(
+                rows, result["actual_timesteps"]
+            )
         evidence[str(seed)] = sha(path / "complete.json")
     return assess_all(per_seed, criterion) | {
         "registration_sha256": sha(out / "registration.json"),
@@ -369,6 +385,28 @@ def compute_assessment(out: Path) -> dict:
         "inputs": reg["inputs"],
         "candidate": c["id"],
     }
+
+
+def summarize_diagnostics(rows: list[dict], actual_steps: int) -> dict:
+    summary = {}
+    for key in DIAGNOSTICS:
+        finite = [
+            (int(r["timesteps"]), float(r[key]))
+            for r in rows
+            if r.get(key) not in (None, "") and np.isfinite(float(r[key]))
+        ]
+        values = [v for _, v in finite]
+        tail = [v for t, v in finite if t >= 2 * actual_steps / 3]
+        summary[key] = {
+            "available_updates": len(values),
+            "missing_updates": len(rows) - len(values),
+            "mean": float(np.mean(values)) if values else None,
+            "min": min(values) if values else None,
+            "max": max(values) if values else None,
+            "last": values[-1] if values else None,
+            "final_third_mean": float(np.mean(tail)) if tail else None,
+        }
+    return summary
 
 
 def verify_assessment(out: Path) -> dict:
@@ -442,6 +480,68 @@ def _plots(out: Path, reg: dict, report: dict) -> None:
         )
         plt.close(fig)
     write_new(destination / "aggregate.json", report)
+    if reg["config"]["schema"] == SCHEMA:
+        aggregate_reward_curve(out, reg["config"])
+
+
+def aggregate_reward_curve(out: Path, config: dict) -> dict:
+    """Equal-seed mean on the recorded PPO-update grid; no interpolation."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    by_seed = {
+        str(seed): {
+            int(r["timesteps"]): float(r["mean_episode_reward"])
+            if r["mean_episode_reward"]
+            else None
+            for r in csv_rows(out / f"shaped-{seed}/diagnostics.csv")
+        }
+        for seed in config["training_seeds"]
+    }
+    points = []
+    for step in sorted({step for rows in by_seed.values() for step in rows}):
+        values = {seed: rows.get(step) for seed, rows in by_seed.items()}
+        available = [v for v in values.values() if v is not None and np.isfinite(v)]
+        complete = len(available) == len(by_seed)
+        points.append(
+            {
+                "timesteps": step,
+                "per_seed": values,
+                "mean": float(np.mean(available)) if complete else None,
+                "seed_std": float(np.std(available, ddof=1))
+                if complete and len(available) > 1
+                else None,
+            }
+        )
+    payload = {
+        "schema": "security-rl-convergence-aggregate-curve-v1",
+        "source": "diagnostics.csv:mean_episode_reward (trailing 100 original-reward episodes)",
+        "aggregation": "equal seed weights; exact recorded timestep; no interpolation",
+        "band": "descriptive between-seed standard deviation; not a confidence interval",
+        "points": points,
+    }
+    write_new(out / "analysis/aggregate-reward.json", payload)
+    x = [r["timesteps"] for r in points]
+    y = np.array([r["mean"] if r["mean"] is not None else np.nan for r in points])
+    spread = np.array([r["seed_std"] if r["seed_std"] is not None else np.nan for r in points])
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(x, y, label="equal-seed mean of recorded trailing-100 episode returns")
+    if len(by_seed) > 1:
+        ax.fill_between(x, y - spread, y + spread, alpha=0.2, label="between-seed SD (not CI)")
+    ax.set(
+        xlabel="environment timesteps",
+        ylabel="original shaped episode return",
+        title="Descriptive aggregate reward curve — not a convergence verdict",
+    )
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(
+        out / "analysis/aggregate-reward.png", metadata={"Software": "Security-RL convergence-v2"}
+    )
+    plt.close(fig)
+    return payload
 
 
 def analyze(config_path: Path, root: Path) -> dict:
@@ -518,6 +618,20 @@ class FrozenDeterministicPolicy:
 
     def predict(self, observation, deterministic=False):
         return self.model.predict(observation, deterministic=True)
+
+
+class FrozenProtocolPolicy:
+    """Frozen inference with the registered action-selection mode and episode seed."""
+
+    def __init__(self, model, action_selection):
+        self.model = model
+        self.deterministic = action_selection == "deterministic"
+
+    def set_random_seed(self, seed):
+        self.model.set_random_seed(seed)
+
+    def predict(self, observation, deterministic=False):
+        return self.model.predict(observation, deterministic=self.deterministic)
 
 
 def persist_evaluation(bundle, manifest, checkpoint: Path) -> dict:
@@ -633,7 +747,7 @@ def evaluate(config_path: Path, root: Path) -> None:
 
             with torch.no_grad():
                 bundle = evaluate_policy(
-                    FrozenDeterministicPolicy(model),
+                    FrozenProtocolPolicy(model, c["evaluation"]["action_selection"]),
                     run_name=manifest.experiment_id,
                     reward_mode=condition,
                     training_seed=seed,
@@ -650,7 +764,7 @@ def evaluate(config_path: Path, root: Path) -> None:
                 "policy_sha256_before": before,
                 "policy_sha256_after": after,
                 "gradient_updates": False,
-                "action_selection": "deterministic",
+                "action_selection": c["evaluation"]["action_selection"],
                 "evaluation_seeds": c["evaluation_seeds"],
                 "training_seed": seed,
                 "checkpoint_sha256": sha(run_path / "model.zip"),
@@ -722,7 +836,7 @@ def verify_evaluation(out: Path, root: Path, config: dict) -> None:
                 or metadata["policy_sha256_after"] != trained["policy_sha256"]
                 or metadata["checkpoint_sha256"] != sha(run_path / "model.zip")
                 or metadata["evaluation_seeds"] != config["evaluation_seeds"]
-                or metadata["action_selection"] != "deterministic"
+                or metadata["action_selection"] != config["evaluation"]["action_selection"]
             ):
                 raise ConvergenceError("evaluation policy/seed protocol mismatch")
             rows = csv_rows(destination / f"{arm}-{seed}/evaluation.csv")

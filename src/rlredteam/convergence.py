@@ -12,10 +12,10 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-SCHEMA = "security-rl-convergence-v1"
+SCHEMA = "security-rl-convergence-v2"
 SEEDS = list(range(42, 52))
 ROOT = Path(__file__).resolve().parents[2]
-BASE_CONFIG = ROOT / "configs/experiments/experiment_01_convergence_1m.yaml"
+BASE_CONFIG = ROOT / "configs/experiments/experiment_01_convergence_1m_v2.yaml"
 DIAGNOSTICS = (
     "approx_kl",
     "clip_fraction",
@@ -88,20 +88,27 @@ def validate_config(c: dict) -> None:
     }
     if set(c) - {"rationale", "factor"} != expected:
         raise ConvergenceError("missing or unknown configuration keys")
-    if c["schema"] != SCHEMA or not re.fullmatch(r"[a-z][a-z0-9_]{1,100}", c["id"]):
+    if c["schema"] not in {SCHEMA, "security-rl-convergence-v1"} or not re.fullmatch(
+        r"[a-z][a-z0-9_]{1,100}", c["id"]
+    ):
         raise ConvergenceError("invalid schema or candidate id")
-    if c["reward"] != "shaped" or c["training_seeds"] != SEEDS or c["evaluation_seeds"] != SEEDS:
+    evaluation_seeds = list(range(1001, 1011)) if c["schema"] == SCHEMA else SEEDS
+    if (
+        c["reward"] != "shaped"
+        or c["training_seeds"] != SEEDS
+        or c["evaluation_seeds"] != evaluation_seeds
+    ):
         raise ConvergenceError("shaped-first protocol requires seeds 42–51")
     if c["topology"] != "configs/topology.yaml" or c["topology_seed"] != 42:
         raise ConvergenceError("fixed baseline topology required")
     if c["total_timesteps"] != 1_000_000:
         raise ConvergenceError("this protocol requires a 1M-step budget")
     if c["evaluation"] != {
-        "action_selection": "deterministic",
+        "action_selection": "stochastic" if c["schema"] == SCHEMA else "deterministic",
         "postgres": True,
         "policy_updates": False,
     }:
-        raise ConvergenceError("frozen deterministic PostgreSQL evaluation required")
+        raise ConvergenceError("evaluation must match the versioned PostgreSQL protocol")
     baseline = PPO_DEFAULTS | {"normalize_advantage": True}
     if set(c["ppo"]) != set(baseline) or c["ppo"]["normalize_advantage"] is not True:
         raise ConvergenceError("explicit complete PPO configuration required")
@@ -169,7 +176,10 @@ def validate_child(parent: dict, child: dict) -> None:
 
 def load_criterion(path: Path) -> dict:
     c = yaml.safe_load(Path(path).read_text())
-    if c["schema"] != "security-rl-convergence-criterion-v1":
+    if c["schema"] not in {
+        "security-rl-convergence-criterion-v1",
+        "security-rl-convergence-criterion-v2",
+    }:
         raise ConvergenceError("unsupported criterion schema")
     if (
         c["window"] != "final_third_of_actual_timesteps"
@@ -183,8 +193,15 @@ def load_criterion(path: Path) -> dict:
             raise ConvergenceError(f"non-finite criterion: {name}")
     if not 1 <= c["min_passing_seeds"] <= 10 or c["blocks"] < 2:
         raise ConvergenceError("invalid seed/block criterion")
-    if c["min_episodes_per_third"] < c["blocks"] or c["reward_scale_floor"] <= 0:
+    minimum = c.get("min_episodes_per_window", c.get("min_episodes_per_third"))
+    if minimum < c["blocks"] or c["reward_scale_floor"] <= 0:
         raise ConvergenceError("invalid episode count or scale")
+    if c["schema"].endswith("v2") and (
+        c["initial_reference"] != "first_completed_episodes"
+        or type(c["initial_episodes"]) is not int
+        or c["initial_episodes"] < minimum
+    ):
+        raise ConvergenceError("invalid initial episode reference")
     if c["smooth_episodes"] < 1:
         raise ConvergenceError("invalid smoothing window")
     for name in (
@@ -238,12 +255,24 @@ def assess_seed(
         or times[-1] > actual_steps
     ):
         return {"passed": False, "reasons": ["invalid or empty episode evidence"]}
-    first = rewards[times <= actual_steps / 3]
+    early_reference = c["schema"].endswith("v2")
+    first = (
+        rewards[: c["initial_episodes"]] if early_reference else rewards[times <= actual_steps / 3]
+    )
+    if early_reference and (
+        len(first) < c["initial_episodes"] or times[len(first) - 1] >= 2 * actual_steps / 3
+    ):
+        return {
+            "passed": False,
+            "reasons": ["initial reference overlaps final third or is incomplete"],
+        }
     final_mask = times >= 2 * actual_steps / 3
     final = rewards[final_mask]
     if actual_steps < budget:
         reasons.append("training budget incomplete")
-    if min(len(first), len(final)) < c["min_episodes_per_third"]:
+    if min(len(first), len(final)) < c.get(
+        "min_episodes_per_window", c.get("min_episodes_per_third")
+    ):
         return {"passed": False, "reasons": reasons + ["insufficient episodes in time thirds"]}
     scale = max(c["reward_scale_floor"], abs(float(np.mean(final))))
     x = (times[final_mask] - 2 * actual_steps / 3) / (actual_steps / 3)
@@ -301,7 +330,7 @@ def assess_seed(
         and ev_slope >= c["min_explained_variance_slope"]
     )
     reasons.extend(reason for reason, ok in checks.items() if not ok)
-    return {
+    result = {
         "passed": not reasons,
         "reasons": reasons,
         "actual_steps": actual_steps,
@@ -323,6 +352,14 @@ def assess_seed(
             "reference_block_mean": reference,
         },
     }
+    if early_reference:
+        result["initial_reference"] = {
+            "method": c["initial_reference"],
+            "episodes": len(first),
+            "last_timestep": float(times[len(first) - 1]),
+            "mean": float(np.mean(first)),
+        }
+    return result
 
 
 def assess_all(per_seed: dict, criterion: dict) -> dict:
@@ -345,7 +382,9 @@ def assess_all(per_seed: dict, criterion: dict) -> dict:
     if spread is None or spread > criterion["max_seed_final_mean_range_fraction"]:
         reasons.append("final rewards inconsistent across seeds")
     return {
-        "schema": "security-rl-convergence-assessment-v1",
+        "schema": "security-rl-convergence-assessment-v2"
+        if criterion["schema"].endswith("v2")
+        else "security-rl-convergence-assessment-v1",
         "passed": not reasons,
         "reasons": reasons,
         "passing_seeds": passing,

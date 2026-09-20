@@ -318,10 +318,13 @@ environment. Simulator-specific code remains isolated in the NASim and CyberBatt
 ## Convergence-first PPO protocol
 
 This pipeline is **not evidence of convergence**. No 1M run is launched by tests.
-The new, independent namespace is `results/convergence_v1/`; previous configurations,
+The reviewed v2 execution namespace is `results/convergence_v2/`; previous configurations,
 checkpoints and results remain read-only. The unrelated PDF work is not part of this task.
+The original v1 YAML files remain unchanged for traceability. Before any canonical 1M
+run, the user approved a first-30-episode rise reference and restoration of the
+historical stochastic evaluation protocol on separate episode seeds 1001–1010.
 
-1. Review `configs/convergence_criterion_v1.yaml` with the supervisor, **before**
+1. Review `configs/convergence_criterion_v2.yaml` with the supervisor, **before**
    preregistration. Its numeric thresholds are explicit operational proposals, not
    quoted supervisor requirements. Commit the reviewed config and source; scientific
    commands refuse a dirty checkout. Keep the same commit and container image for the
@@ -348,17 +351,17 @@ checkpoints and results remain read-only. The unrelated PDF work is not part of 
    `make convergence-evaluate`. Both commands are blocked until the shaped gate
    reconstructs successfully. Sparse is trained with the same hyperparameters and
    budget; only the reward condition differs. The experimental unit is ten matched
-   **training seeds 42–51**, with ten matched evaluation episodes (seeds 42–51) per
-   policy. These reused seeds are **not held-out generalisation evidence**.
+   **training seeds 42–51**, with ten matched evaluation episodes (seeds 1001–1010) per
+   policy. Episode seed separation on a fixed topology is **not unseen-topology generalisation**.
 
 Exact new experiment configs:
 
-- `configs/experiments/experiment_01_convergence_1m.yaml`: unchanged baseline PPO,
-  shaped reward, fixed topology seed 42, training/evaluation seeds 42–51, 1,000,000
+- `configs/experiments/experiment_01_convergence_1m_v2.yaml`: unchanged baseline PPO,
+  shaped reward, fixed topology seed 42, training seeds 42–51, evaluation seeds 1001–1010, 1,000,000
   requested timesteps. PPO completes full 2,048-step rollouts: **1,001,472 actual
   timesteps**, recorded rather than silently rounded away. Learning rate 0.0003,
   batch size 64, epochs 10, gamma 0.99, GAE 0.95, clip 0.2, entropy coefficient 0.01.
-- `configs/experiments/experiment_01_convergence_normalized_1m.yaml`: identical PPO,
+- `configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml`: identical PPO,
   topology, reward and seeds; enables reward-only SB3 `VecNormalize`.
 
 Advantage normalisation is explicitly enabled in both arms (the existing SB3
@@ -370,7 +373,7 @@ and semantic step records remain in the canonical episode collector/PostgreSQL.
 Each normalised checkpoint saves and hashes `vecnormalize.pkl`. Frozen evaluation
 loads and validates that state, disables updates, and reports untransformed rewards;
 with `norm_obs=false`, policy input is exactly the original partial observation.
-The evaluation wrapper forces deterministic action selection, uses no gradients,
+The evaluation wrapper follows seeded stochastic action selection, uses no gradients,
 and checks policy hashes and PPO update counts before/after. PostgreSQL and canonical
 CSV/JSON remain authoritative; no new observability backend is introduced.
 Because the historical episode uniqueness key does not include the run ID,
@@ -378,9 +381,10 @@ convergence evaluation uses a separate PostgreSQL experiment linked to its train
 experiment/run and checkpoint hash in notes and canonical metadata. This supports
 reused seeds without altering the old schema or colliding with training episodes.
 
-Assessment schema `security-rl-convergence-assessment-v1` uses **timestep-based**
-thirds, not episode-count thirds. Current proposed limits: at least 30 episodes in
-initial/final thirds; final mean rises by at least 10% of the reward scale; four
+Assessment schema `security-rl-convergence-assessment-v2` uses the **first 30 completed
+episodes** as the initial reference and a **timestep-based final third**. The initial
+reference must not overlap the final third. At least 30 final-third episodes are
+required; final mean rises by at least 10% of the reward scale; four
 final-third time-block means span at most 15%; absolute final-third OLS slope is
 at most 10%; last-block drop from earlier middle/final-third blocks is at most 15%
 (a lower but flat final third cannot hide a boundary collapse). The scale
@@ -391,11 +395,18 @@ These are configurable definitions of plateau/consistency, **not a statistical
 proof of optimality**. Missing evidence fails closed. Diagnostics are collected
 after every PPO update, including the final one, to CSV; missing values are empty,
 not invented zeros. Curves use a trailing 20-episode mean and fixed plot metadata.
+The aggregate curve is the equal-seed mean of the recorded trailing-100-episode
+reward at each PPO update, with descriptive between-seed SD (not a confidence
+interval). Missing seed values remain missing; there is no interpolation. Per-seed
+diagnostic summaries include means/ranges, last value and final-third mean. Completed
+v2 runs also record elapsed wall time; timing is operational metadata, not a
+deterministic learning metric.
 
 Each candidate contains an exclusive-create `registration.json`, `shaped-<seed>/`
 directories with episodes, diagnostics, manifest, policy, optional normalisation
 state and hash-bound completion record; `analysis/` holds per-seed raw/smoothed
-curves, reward/diagnostic PNGs, final-third summaries and aggregate JSON. A passing
+curves, reward/diagnostic PNGs, aggregate reward PNG/JSON, final-third summaries
+and aggregate assessment JSON. A passing
 `assessment.json` is reconstructed from raw evidence before `first_stable.json`
 freezes exact config/criterion, commit, source hashes, topology/CVE hashes and every
 checkpoint. Completed runs can be verified/skipped on restart; **partial runs are

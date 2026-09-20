@@ -30,7 +30,7 @@ def baseline():
 
 @pytest.fixture
 def criterion():
-    return load_criterion(ROOT / "configs/convergence_criterion_v1.yaml")
+    return load_criterion(ROOT / "configs/convergence_criterion_v2.yaml")
 
 
 def evidence(collapse=False):
@@ -51,7 +51,7 @@ def test_exact_baseline_and_normalization(baseline):
     assert baseline["ppo"]["batch_size"] == 64
     assert baseline["ppo"]["n_epochs"] == 10
     normalized = load_config(
-        ROOT / "configs/experiments/experiment_01_convergence_normalized_1m.yaml"
+        ROOT / "configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml"
     )
     validate_child(baseline, normalized)
     assert normalized["ppo"] == baseline["ppo"]
@@ -86,7 +86,9 @@ def test_unknown_fields_rejected(baseline):
 
 
 def test_single_factor_and_order():
-    parent = load_config(ROOT / "configs/experiments/experiment_01_convergence_normalized_1m.yaml")
+    parent = load_config(
+        ROOT / "configs/experiments/experiment_01_convergence_normalized_1m_v2.yaml"
+    )
     child = copy.deepcopy(parent)
     child.update(
         id="lr_candidate", stage="tuning", factor="learning_rate", rationale="KL and clipping high"
@@ -171,6 +173,36 @@ def test_flat_final_third_cannot_hide_a_late_drop_from_middle_third(criterion):
     result = assess_seed(episodes, rows, actual_steps=30000, budget=30000, criterion=criterion)
     assert not result["passed"]
     assert "late collapse" in result["reasons"]
+
+
+def test_early_plateau_uses_approved_first_30_episodes(criterion):
+    episodes, rows = evidence()
+    # Rise in the first 20% of the initial third, then remain stable.
+    for i, row in enumerate(episodes):
+        row["shaped_return"] = min(100.0, i * 10.0)
+    result = assess_seed(episodes, rows, actual_steps=30000, budget=30000, criterion=criterion)
+    assert result["passed"]
+    assert result["initial_reference"]["episodes"] == 30
+    legacy = load_criterion(ROOT / "configs/convergence_criterion_v1.yaml")
+    old = assess_seed(episodes, rows, actual_steps=30000, budget=30000, criterion=legacy)
+    assert not old["passed"] and "reward did not rise" in old["reasons"]
+
+
+def test_training_and_evaluation_protocol_matches_historical_baseline(baseline):
+    import yaml
+
+    old = yaml.safe_load((ROOT / "configs/experiments/experiment_01.yaml").read_text())[
+        "experiment"
+    ]
+    assert baseline["evaluation_seeds"] == old["evaluation_seeds"]
+    assert not set(baseline["training_seeds"]) & set(baseline["evaluation_seeds"])
+    assert baseline["evaluation"]["action_selection"] == "stochastic"
+
+
+def test_v1_configs_still_validate_without_modification():
+    assert load_config(ROOT / "configs/experiments/experiment_01_convergence_1m.yaml")[
+        "schema"
+    ].endswith("v1")
 
 
 def test_advice_is_not_a_sweep(criterion):
