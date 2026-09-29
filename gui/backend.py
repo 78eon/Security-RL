@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from gui.data.baseline import BaselineData, load_baseline
 from gui.data.models import StudySummary, TopologyView
 from gui.data.repository import Repository, RepositoryError
 from gui.data.runs import (
@@ -105,9 +106,11 @@ class DashboardData:
     attack_path_reports: list[dict] = field(default_factory=list)
     mitigation_reports: list[dict] = field(default_factory=list)
     causal_attack_graphs: list[dict] = field(default_factory=list)
+    baseline: BaselineData = field(default_factory=BaselineData)
 
 
 class BackendPort(Protocol):
+    def load_baseline(self) -> BaselineData: ...
     def load_dashboard(self) -> DashboardData: ...
     def refresh_paths(self) -> list[dict]: ...
     def simulation_profiles(self) -> list[dict]: ...
@@ -123,6 +126,9 @@ class ApplicationBackend:
 
     def __init__(self, repository: Repository | None = None) -> None:
         self.repository = repository or Repository()
+
+    def load_baseline(self) -> BaselineData:
+        return load_baseline(REPO_ROOT)
 
     def pause_campaign(self, campaign_id: str) -> None:
         raise RuntimeError("no campaign scheduler is configured")
@@ -404,6 +410,7 @@ class ApplicationBackend:
             attack_path_reports=attack_path_reports,
             mitigation_reports=mitigation_reports,
             causal_attack_graphs=causal_attack_graphs,
+            baseline=self.load_baseline(),
         )
 
     @staticmethod
@@ -531,6 +538,11 @@ class ApplicationBackend:
         ]
 
     def export_report(self) -> str:
+        baseline = self.load_baseline()
+        if baseline.state == "REVIEWED":
+            return baseline.statistics_path
+        if baseline.state == "INVALID":
+            raise ValueError(baseline.detail)
         studies = load_studies()
         if studies:
             report = Path(studies[0].result_path) / "tables" / "statistics.csv"

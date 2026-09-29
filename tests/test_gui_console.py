@@ -170,12 +170,12 @@ def mitigation_report() -> dict:
     }
 
 
-def test_all_eight_desktop_workspaces_navigate() -> None:
+def test_all_nine_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 8
-    assert len(window.nav_buttons) == 8
+    assert window.stack.count() == 9
+    assert len(window.nav_buttons) == 9
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()
@@ -285,6 +285,11 @@ def test_latest_study_drives_overview_and_research_pages() -> None:
     assert overview.metric_table.item(0, 0).text() == "Detection Rate"
     assert research.selector.itemText(0).startswith("Phase 13")
     assert research.table.item(0, 1).text() == "PRIMARY"
+    window.apply_dashboard(DashboardData(source_status="Artefact mode · unavailable"))
+    assert overview.study_name.text() == "No canonical study loaded"
+    assert overview.metric_table.rowCount() == 0
+    assert research.commit.value.text() == "—"
+    assert research.provenance.text() == ""
     window.close()
 
 
