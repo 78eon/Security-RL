@@ -57,6 +57,15 @@ def test_exact_baseline_and_normalization(baseline):
     assert normalized["ppo"] == baseline["ppo"]
 
 
+def test_corrected_confirmatory_config_changes_only_study_id(baseline):
+    corrected = load_config(
+        ROOT / "configs/experiments/experiment_01_discovery_corrected_v3.yaml"
+    )
+    assert corrected == baseline | {"id": "experiment_01_discovery_corrected_v3"}
+    assert corrected["evaluation_seeds"] == list(range(1001, 1011))
+    assert corrected["training_seeds"] == SEEDS
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

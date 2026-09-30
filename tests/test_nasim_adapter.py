@@ -116,6 +116,115 @@ def test_count_handles_int_and_collection(raw: object, expected: int) -> None:
     assert _count(raw) == expected
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ({}, 0),
+        ({(1, 0): False, (2, 0): False}, 0),
+        ({(1, 0): True, (2, 0): False}, 1),
+        ({(1, 0): True, (2, 0): True}, 2),
+    ],
+)
+def test_subnet_discovery_map_counts_true_hosts(raw: dict, expected: int) -> None:
+    """Permanent witness: len({host: False}) fabricated discoveries."""
+    assert _count(raw) == expected
+
+
+def test_historical_len_defect_witness() -> None:
+    raw = {(1, 0): False, (2, 0): False}
+    assert len(raw) == 2  # Historical adapter result, not host novelty.
+    assert _count(raw) == 0
+
+
+def test_subnet_discovery_map_rejects_unknown_value_shape() -> None:
+    with pytest.raises(AdapterError, match="boolean"):
+        _count({(1, 0): {"discovered": True}})
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected_count", "expected_tactic"),
+    [
+        ({(1, 0): False, (2, 0): False}, 0, 0.0),
+        ({(1, 0): True, (2, 0): False}, 1, 1.0),
+        ({(1, 0): True, (2, 0): True}, 2, 1.0),
+    ],
+)
+def test_subnet_scan_discovery_reaches_event_and_reward(
+    config, catalogue, monkeypatch, flags, expected_count, expected_tactic
+) -> None:
+    from nasim.envs.action import SubnetScan
+
+    env = make_env(config, topology_seed=42)
+    wrapped = RewardWrapper(env, catalogue, topology_seed=42)
+    index = next(
+        idx for idx in range(env.action_space.n)
+        if isinstance(env.action_space.get_action(idx), SubnetScan)
+    )
+    observation, _ = wrapped.reset(seed=42)
+
+    def native_step(action):
+        assert action == index
+        return observation, -1.0, False, False, {
+            "success": True, "newly_discovered": flags,
+        }
+
+    monkeypatch.setattr(env, "step", native_step)
+    _, scored, _, _, info = wrapped.step(index)
+    event, breakdown = info["attack_event"], info["reward_breakdown"]
+    assert event.kind is ActionKind.SUBNET_SCAN
+    assert event.newly_discovered == expected_count
+    assert event.is_informative is (expected_count > 0)
+    assert breakdown.paid is (expected_count > 0)
+    assert breakdown.tactic == expected_tactic
+    assert breakdown.discovery == 0.0
+    assert scored == expected_tactic
+
+    # The same input never creates a sparse scalar payment for a scan.
+    from rlredteam.reward import RewardEngine
+
+    sparse = RewardEngine(RewardConfig(mode=RewardMode.SPARSE)).score(event)
+    assert sparse.total == 0.0
+
+
+def test_non_novel_repeat_does_not_reopen_scan_payment(config, catalogue) -> None:
+    from nasim.envs.action import SubnetScan
+
+    env = make_env(config, topology_seed=42)
+    adapter = NASimEventAdapter(env, catalogue, topology_seed=42)
+    index = next(
+        idx for idx in range(env.action_space.n)
+        if isinstance(env.action_space.get_action(idx), SubnetScan)
+    )
+    from rlredteam.reward import RewardEngine
+
+    engine = RewardEngine()
+    first = adapter.build(
+        index, 1.0, False, False,
+        {"success": True, "newly_discovered": {(1, 0): True, (2, 0): False}}, 0,
+    )
+    repeated = adapter.build(
+        index, -1.0, False, False,
+        {"success": True, "newly_discovered": {(1, 0): False, (2, 0): False}}, 1,
+    )
+    assert engine.score(first).tactic == 1.0
+    assert repeated.newly_discovered == 0
+    assert engine.score(repeated).tactic == 0.0
+
+
+@pytest.mark.parametrize("kind", ["Exploit", "PrivilegeEscalation", "ServiceScan"])
+def test_other_actions_do_not_gain_discovery_from_empty_info(
+    config, catalogue, kind
+) -> None:
+    env = make_env(config, topology_seed=42)
+    adapter = NASimEventAdapter(env, catalogue, topology_seed=42)
+    index = next(
+        idx for idx in range(env.action_space.n)
+        if type(env.action_space.get_action(idx)).__name__ == kind
+    )
+    event = adapter.build(index, -1.0, False, False, {"success": True}, 0)
+    assert event.newly_discovered == 0
+
+
 # -- adapter ---------------------------------------------------------------
 
 

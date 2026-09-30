@@ -118,6 +118,9 @@ def test_backend_rejects_configuration_without_a_real_service() -> None:
 
 
 def test_backend_exports_latest_canonical_analysis_artifact(tmp_path, monkeypatch) -> None:
+    from gui.data.baseline import BaselineData
+
+    monkeypatch.setattr(ApplicationBackend, "load_baseline", lambda self: BaselineData())
     table = tmp_path / "tables" / "statistics.csv"
     table.parent.mkdir()
     table.write_text("metric,p_value\n")

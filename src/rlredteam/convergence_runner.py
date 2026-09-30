@@ -22,6 +22,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 from rlredteam import provenance as prov
 from rlredteam.catalogue import CVECatalogue
 from rlredteam.convergence import (
+    BASE_CONFIG,
     DIAGNOSTICS,
     ROOT,
     SCHEMA,
@@ -45,6 +46,41 @@ from rlredteam.topology import TopologyConfig, describe, make_env
 from rlredteam.train import EpisodeCollector, build_env, linear_learning_rate, set_all_seeds
 
 DEFAULT_OUTPUT = ROOT / "results/convergence_v2"
+CONFIRMATORY_ID = "experiment_01_discovery_corrected_v3"
+CONFIRMATORY_PROTOCOL = (
+    ROOT / "configs/experiments/experiment_01_discovery_corrected_v3.provenance.json"
+)
+
+
+def confirmatory_protocol(config: dict, inputs: dict) -> dict | None:
+    """Bind corrected registration to the untouched baseline and its protocol."""
+    if config["id"] != CONFIRMATORY_ID:
+        return None
+    baseline = load_config(BASE_CONFIG)
+    if config != baseline | {"id": CONFIRMATORY_ID}:
+        raise ConvergenceError("confirmatory configuration drifted from the frozen protocol")
+    protocol = read_json(CONFIRMATORY_PROTOCOL)
+    parent = protocol["parent"]
+    frozen_root = DEFAULT_OUTPUT
+    paths = {
+        "registration_sha256": frozen_root / baseline["id"] / "registration.json",
+        "first_stable_sha256": frozen_root / "first_stable.json",
+        "assessment_sha256": frozen_root / baseline["id"] / "assessment.json",
+        "reviewed_manifest_sha256": (
+            frozen_root / "final_baseline_evaluation/report/reviewed_manifest.json"
+        ),
+        "reviewed_results_sha256": (
+            frozen_root / "final_baseline_evaluation/report/reviewed_results.json"
+        ),
+    }
+    if any(sha(path) != parent[key] for key, path in paths.items()):
+        raise ConvergenceError("frozen parent evidence changed or is unavailable")
+    if (
+        inputs["topology_hash"] != parent["topology_hash"]
+        or inputs["cve_catalogue_sha256"] != parent["cve_catalogue_sha256"]
+    ):
+        raise ConvergenceError("confirmatory topology or CVE catalogue changed")
+    return protocol | {"protocol_sha256": sha(CONFIRMATORY_PROTOCOL)}
 
 
 @contextmanager
@@ -99,6 +135,8 @@ def require_clean() -> None:
 def register(config_path: Path, root: Path) -> dict:
     require_clean()
     c = load_config(config_path)
+    inputs = current_inputs(config_path)
+    confirmation = confirmatory_protocol(c, inputs)
     if c["schema"] != SCHEMA:
         raise ConvergenceError("superseded execution protocol; use the approved v2 configuration")
     if (root / "first_stable.json").exists():
@@ -124,10 +162,12 @@ def register(config_path: Path, root: Path) -> dict:
         "schema": "security-rl-convergence-registration-v1",
         "config": c,
         "criterion": load_criterion(ROOT / c["criterion"]),
-        "inputs": current_inputs(config_path),
+        "inputs": inputs,
         "order": len(registrations),
         "config_path": str(config_path.resolve().relative_to(ROOT)),
     }
+    if confirmation is not None:
+        registration["confirmatory"] = confirmation
     write_new(out / "registration.json", registration)
     return registration
 
@@ -138,6 +178,9 @@ def verify_registration(config_path: Path, root: Path) -> tuple[dict, Path]:
     registration = read_json(out / "registration.json")
     if registration["config"] != c or registration["inputs"] != current_inputs(config_path):
         raise ConvergenceError("registered source/config/topology/catalogue/image changed")
+    if c["id"] == CONFIRMATORY_ID:
+        if registration.get("confirmatory") != confirmatory_protocol(c, registration["inputs"]):
+            raise ConvergenceError("confirmatory parent or decoder protocol changed")
     if registration["criterion"] != load_criterion(ROOT / c["criterion"]):
         raise ConvergenceError("registered criterion changed")
     return registration, out
@@ -356,6 +399,28 @@ def run(config_path: Path, root: Path, *, sparse=False) -> None:
             f"{result.get('elapsed_seconds', 'unknown')} seconds",
             flush=True,
         )
+
+
+def run_seed(config_path: Path, root: Path, seed: int, *, sparse=False) -> dict:
+    """Explicit single-seed dispatch for a preregistered convergence study.
+
+    A selected subset can be trained without scheduling all ten policies. The
+    unchanged convergence assessment still requires all ten registered seeds.
+    """
+    require_clean()
+    registration, out = verify_registration(config_path, root)
+    config = registration["config"]
+    if seed not in config["training_seeds"]:
+        raise ConvergenceError("seed is outside the registered training set")
+    if sparse:
+        require_frozen(config_path, root)
+    elif (root / "first_stable.json").exists():
+        raise ConvergenceError("shaped training closed after first passing candidate")
+    condition = "sparse" if sparse else "shaped"
+    path = out / f"{condition}-{seed}"
+    if path.exists():
+        return verify_run(path, config, seed, condition)
+    return _train_one(config, seed, path, postgres=True, reward_mode=condition)
 
 
 def compute_assessment(out: Path) -> dict:

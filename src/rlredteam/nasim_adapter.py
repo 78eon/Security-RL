@@ -81,9 +81,19 @@ def _access_level(
 
 
 def _count(raw: object) -> int:
-    """Length of a dict/collection field, tolerating a bare count or None."""
+    """Count NASim discoveries from a host->bool map, count, or collection.
+
+    NASim 0.12 subnet scans provide one boolean per host, including False for
+    hosts that were not newly discovered. None, bare integer counts and
+    non-mapping collections retain the historical interpretation. Unknown
+    mapping value shapes fail explicitly instead of fabricating discoveries.
+    """
     if not raw:
         return 0
+    if isinstance(raw, dict):
+        if not all(type(value) is bool for value in raw.values()):
+            raise AdapterError("NASim discovery mapping requires boolean host flags")
+        return sum(raw.values())
     if isinstance(raw, int):
         return raw
     return len(raw)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from math import ceil
+from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
@@ -31,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from gui import theme
 from gui.backend import ApplicationBackend, BackendPort, DashboardData
+from gui.data.baseline import BaselineData
 from gui.data.models import StudySummary
 from gui.widgets.enterprise_graph import EnterpriseGraph
 from gui.widgets.mitre_navigator import MitreNavigator
@@ -123,6 +126,7 @@ class StateBanner(QFrame):
         box.setContentsMargins(14, 11, 14, 11)
         self.state = label("LOADING", "StateLabel")
         self.message = label("Loading backend snapshot…", "Muted", wrap=True)
+        self.message.setTextFormat(Qt.TextFormat.PlainText)
         box.addWidget(self.state)
         box.addWidget(self.message, 1)
 
@@ -158,6 +162,13 @@ class OverviewPage(Page):
         )
         self.banner = StateBanner()
         self.root.addWidget(self.banner)
+        self.baseline_banner = StateBanner()
+        self.baseline_banner.update_state(
+            "FROZEN BASELINE",
+            "Open Frozen Baseline for the reviewed comparison and supervisor files.",
+            "warn",
+        )
+        self.root.addWidget(self.baseline_banner)
         self.study_panel = panel(QVBoxLayout(), "HeroPanel")
         self.study_phase = label("NO CANONICAL STUDY", "Eyebrow")
         self.study_name = label("Generated evidence has not been found", "HeroTitle")
@@ -179,7 +190,9 @@ class OverviewPage(Page):
         self.root.addLayout(metric_row)
 
         metrics_panel = panel(QVBoxLayout())
-        metrics_panel.layout().addWidget(label("LATEST PRIMARY COMPARISONS", "SectionTitle"))
+        metrics_panel.layout().addWidget(
+            label("HISTORICAL STUDY PRIMARY COMPARISONS", "SectionTitle")
+        )
         self.metric_table = QTableWidget(0, 6)
         self.metric_table.setHorizontalHeaderLabels(
             ["Metric", "Reference", "Candidate", "Difference", "Adjusted p", "Verdict"]
@@ -195,17 +208,21 @@ class OverviewPage(Page):
         self.banner.update_state(
             "DEGRADED" if kind == "warn" else "CONNECTED", data.source_status, kind
         )
+        self.apply_baseline(data.baseline)
         complete = [study for study in data.studies if study.complete]
         latest = data.studies[0] if data.studies else None
-        self.studies.update_value(str(len(complete)), "Phase 7–13 packages")
+        self.studies.update_value(str(len(complete)), "Historical Phase 7–13 packages")
         self.runs.update_value(str(len(data.campaigns)), "Deduplicated records")
         if latest is None:
+            self.study_phase.setText("NO HISTORICAL STUDY")
+            self.study_name.setText("No canonical study loaded")
+            self.study_outcome.setText("Use Frozen Baseline for the reviewed convergence study.")
             self.episodes.update_value("—", "No current study")
             self.signals.update_value("—", "No primary statistics")
             fill_table(self.metric_table, [])
             return
         state = "COMPLETE" if latest.complete else "PARTIAL"
-        self.study_phase.setText(f"PHASE {latest.phase} · {state}")
+        self.study_phase.setText(f"HISTORICAL PHASE {latest.phase} · {state}")
         self.study_name.setText(latest.title)
         self.study_outcome.setText(
             f"{latest.outcome} · {latest.training_seeds} matched training seeds · "
@@ -230,6 +247,19 @@ class OverviewPage(Page):
                 for metric in latest.primary_metrics
             ],
         )
+
+
+    def apply_baseline(self, data: BaselineData) -> None:
+        if data.state == "REVIEWED":
+            message = (
+                f"{data.candidate} · {data.policy_pairs} policy pairs · "
+                f"{data.total_episodes} evaluation episodes. "
+                "Discovery-derived metrics withheld; shaping reward affected. "
+                "Open Frozen Baseline for results and the supervisor decision."
+            )
+        else:
+            message = data.detail
+        self.baseline_banner.update_state(f"BASELINE {data.state}", message, "warn")
 
 
 class SimulationPage(Page):
@@ -1208,7 +1238,8 @@ class ResearchPage(Page):
         super().__init__(
             "CANONICAL LOCAL EVIDENCE",
             "Research studies",
-            "Browse the frozen Phase 7–13 outcomes. Generated results stay local and ignored.",
+            "Historical Phase 7–13 outcomes. The reviewed convergence comparison is in "
+            "Frozen Baseline. Generated results stay local and ignored.",
         )
         selector = panel(QHBoxLayout())
         selector.layout().addWidget(label("Study", "FieldLabel"))
@@ -1267,6 +1298,9 @@ class ResearchPage(Page):
             self.status.setText("NO EVIDENCE")
             self.banner.update_state("EMPTY", "No canonical result package is mounted.", "warn")
             fill_table(self.table, [])
+            for card in (self.seed_count, self.episode_count, self.signal_count, self.commit):
+                card.update_value("—", "No study selected")
+            self.provenance.clear()
             return
         study = self.studies[index]
         self.status.setText("COMPLETE" if study.complete else "PARTIAL")
@@ -1415,12 +1449,15 @@ class MainWindow(QMainWindow):
         ("Research", "Research studies"),
         ("Runs", "Stored runs"),
         ("System", "System status"),
+        ("Frozen Baseline", "Reviewed baseline and supervisor evidence"),
     ]
 
     def __init__(self, backend: BackendPort | None = None) -> None:
         super().__init__()
         self.backend = backend or ApplicationBackend()
         self.setWindowTitle("RLRedTeam Research Console")
+        from gui.views.baseline import BaselinePage
+
         self.resize(1440, 920)
         self.setMinimumSize(1120, 720)
         root = QWidget(objectName="Root")
@@ -1463,7 +1500,7 @@ class MainWindow(QMainWindow):
         self.refresh_button = button("Refresh backend")
         self.refresh_button.clicked.connect(self.refresh)
         top.addWidget(self.refresh_button)
-        self.report_button = button("Locate latest statistics", "Primary")
+        self.report_button = button("Copy latest statistics path", "Primary")
         self.report_button.clicked.connect(self.export_report)
         top.addWidget(self.report_button)
         content_layout.addLayout(top)
@@ -1478,6 +1515,7 @@ class MainWindow(QMainWindow):
             ResearchPage(),
             RunsPage(),
             SystemPage(),
+            BaselinePage(self.notify),
         ]
         for page in self.pages:
             scroll = QScrollArea()
@@ -1492,6 +1530,12 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def refresh(self) -> None:
+        # Local evidence remains accessible while PostgreSQL is unavailable/slow.
+        if hasattr(self.backend, "load_baseline"):
+            self._baseline_task = run_async(
+                self.backend.load_baseline, self.apply_baseline,
+                self._baseline_failed,
+            )
         if not hasattr(self.backend, "load_dashboard"):
             return
         self.refresh_button.setEnabled(False)
@@ -1508,6 +1552,13 @@ class MainWindow(QMainWindow):
         self.pages[2].apply_paths(data.paths)
         self.refresh_button.setEnabled(True)
         self.statusBar().showMessage(data.source_status)
+
+    def apply_baseline(self, data: BaselineData) -> None:
+        self.pages[0].apply_baseline(data)
+        self.pages[8].apply_baseline(data)
+
+    def _baseline_failed(self, error: str, _detail: str) -> None:
+        self.apply_baseline(BaselineData(state="INVALID", detail=error))
 
     def _dashboard_failed(self, error: str, detail: str) -> None:
         self.refresh_button.setEnabled(True)
@@ -1529,6 +1580,18 @@ class MainWindow(QMainWindow):
     def export_report(self) -> None:
         self._export_task = run_async(
             self.backend.export_report,
-            lambda path: self.notify(f"Latest statistics: {path}"),
+            self._statistics_ready,
             lambda error, _detail: self.notify(f"Statistics unavailable: {error}"),
         )
+
+    def _statistics_ready(self, path: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        local_root = Path(__file__).resolve().parents[2]
+        host_root = Path(os.environ.get("RLREDTEAM_HOST_REPO") or local_root)
+        try:
+            path = str(host_root / Path(path).resolve().relative_to(local_root))
+        except ValueError:
+            pass
+        QApplication.clipboard().setText(path)
+        self.notify(f"Copied latest statistics path: {path}")
