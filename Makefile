@@ -3,6 +3,56 @@
 .PHONY: neo4j-build neo4j-up neo4j-down neo4j-export neo4j-analyze neo4j-verify
 .PHONY: mlflow-build mlflow-up mlflow-down mlflow-sync mlflow-verify
 .PHONY: convergence-dirs convergence-1m-freeze convergence-1m-run convergence-1m-analyze convergence-normalized-freeze convergence-normalized-run convergence-normalized-analyze convergence-verify convergence-sparse-run convergence-evaluate reproducibility-check
+.PHONY: confirmatory-dirs confirmatory-freeze confirmatory-run-seed confirmatory-run-all confirmatory-analyze confirmatory-sparse-run-all confirmatory-evaluate confirmatory-verify confirmatory-verify-db confirmatory-compare
+
+CONFIRMATORY_CONFIG := configs/experiments/experiment_01_discovery_corrected_v3.yaml
+CONFIRMATORY_ROOT := results/confirmatory_discovery_v3
+CONFIRMATORY_ARGS := --config $(CONFIRMATORY_CONFIG) --output-root /app/$(CONFIRMATORY_ROOT)
+CONFIRMATORY_RUN = podman run --rm --network sourcecode_rlredteam-internal \
+	--cap-drop=all --security-opt=no-new-privileges --user 10001:10001 \
+	--memory=12g --pids-limit=512 --tmpfs /app/runs:rw,mode=1777 \
+	-e PYTHONHASHSEED=0 -e MPLCONFIGDIR=/tmp/matplotlib \
+	-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
+	-e RLREDTEAM_GIT_DIRTY="$(RLREDTEAM_GIT_DIRTY)" \
+	-e RLREDTEAM_IMAGE_DIGEST="$$(podman image inspect localhost/sourcecode_app:latest --format '{{.Id}}')" \
+	-e POSTGRES_HOST=postgres -e POSTGRES_PORT=5432 \
+	-e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
+	-v "$(CURDIR):/app:ro,z" \
+	-v "$(CURDIR)/$(CONFIRMATORY_ROOT):/app/$(CONFIRMATORY_ROOT):rw,z" \
+	-w /app localhost/sourcecode_app:latest
+
+confirmatory-dirs: ## Prepare only the ignored corrected-study namespace
+	podman run --rm --network none --user 10001:10001 \
+		-v "$(CURDIR)/results:/app/results:rw,z" localhost/sourcecode_app:latest \
+		python -c 'from pathlib import Path; Path("/app/$(CONFIRMATORY_ROOT)").mkdir(exist_ok=True)'
+
+confirmatory-freeze: confirmatory-dirs ## Register corrected protocol after clean commit
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py freeze $(CONFIRMATORY_ARGS)
+
+confirmatory-run-seed: confirmatory-dirs db-up ## Explicit one-seed shaped run: make confirmatory-run-seed SEED=42
+	test -n "$(SEED)"
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py run-seed $(CONFIRMATORY_ARGS) --seed $(SEED)
+
+confirmatory-run-all: confirmatory-dirs db-up ## Explicit ten-seed 1M shaped run; never a dependency of other targets
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py run $(CONFIRMATORY_ARGS)
+
+confirmatory-analyze: confirmatory-dirs ## Assess all ten shaped seeds under unchanged criterion
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py analyze $(CONFIRMATORY_ARGS)
+
+confirmatory-sparse-run-all: confirmatory-dirs db-up ## Matched sparse rerun after shaped freeze
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py sparse-run $(CONFIRMATORY_ARGS)
+
+confirmatory-evaluate: confirmatory-dirs db-up ## Frozen-policy paired evaluation; no learning
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py evaluate $(CONFIRMATORY_ARGS)
+
+confirmatory-verify: confirmatory-dirs ## Check registered files without training
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/run_convergence.py verify $(CONFIRMATORY_ARGS)
+
+confirmatory-verify-db: confirmatory-dirs db-up ## Read-only DB reconstruction after evaluation
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/verify_discovery_confirmatory_db.py $(CONFIRMATORY_ARGS)
+
+confirmatory-compare: confirmatory-dirs ## Descriptive corrected-vs-frozen native outcomes
+	set -a; . ./.env; set +a; $(CONFIRMATORY_RUN) python scripts/compare_discovery_confirmatory.py $(CONFIRMATORY_ARGS)
 
 # Historical evidence is read-only. Only the NEW convergence namespace is writable.
 CONVERGENCE_CONFIG ?= configs/experiments/experiment_01_convergence_1m_v2.yaml

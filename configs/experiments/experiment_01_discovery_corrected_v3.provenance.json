@@ -1,0 +1,18 @@
+{
+  "schema": "security-rl-discovery-confirmatory-v1",
+  "decoder_version": "nasim-newly-discovered-bool-map-v2",
+  "correction": "Count only True flags in NASim host-to-boolean newly_discovered mappings; reject unsupported mapping values. Keep the existing reward engine and other simulator inputs unchanged.",
+  "interpretation": "Confirmatory rerun after correction of NASim discovery-counting defect. Results will be reported regardless of direction.",
+  "parent": {
+    "study": "experiment_01_convergence_1m_v2",
+    "git_commit": "e926c4fe3b35503b83dc5c860b9524ab3adf7618",
+    "registration_sha256": "19fc2d1ea399be5a4e72e1bb9c120f015cd5051a811daf421fd51b3456236e5b",
+    "first_stable_sha256": "babb419af22f91c7dc997642001990de8eb845e54005c86861cac6abe8660e72",
+    "assessment_sha256": "7409d463cedeea9a88cb84326ebe817515b06feace865e75bf1de8c2571bd9a3",
+    "reviewed_manifest_sha256": "c86a7c8b087ecf6e8f0e61224eb597185d40419dde1162c094dad2b0798fa35b",
+    "reviewed_results_sha256": "3e7af986ddb954d902ab956a8b1b57e075db7ff4635152f1d1b746f4758cc94d",
+    "topology_hash": "f875a25adf37ee34",
+    "cve_catalogue_sha256": "c14575707519311e90a571e1b27d0bed16b2d10e41757f60a135ab8756137205"
+  },
+  "decision_boundary": "The registered convergence gate requires all ten seeds. An approved reduced subset can be trained and inspected but cannot satisfy that unchanged gate."
+}

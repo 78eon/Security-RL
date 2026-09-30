@@ -16,6 +16,7 @@ from rlredteam.convergence_runner import (
     normalized_environment,
     require_frozen,
     run,
+    run_seed,
     study_lock,
     verify,
     verify_run,
@@ -137,6 +138,57 @@ def test_sparse_and_final_evaluation_blocked_without_shaped_gate(tmp_path, monke
     )
     with pytest.raises(ConvergenceError, match="blocked"):
         run(BASE_CONFIG, tmp_path, sparse=True)
+
+
+def test_single_seed_dispatch_never_schedules_the_other_nine(tmp_path, monkeypatch):
+    from rlredteam import convergence_runner as runner
+
+    config = load_config(BASE_CONFIG)
+    monkeypatch.setattr(runner, "require_clean", lambda: None)
+    monkeypatch.setattr(
+        runner, "verify_registration", lambda *_: ({"config": config}, tmp_path)
+    )
+    calls = []
+    monkeypatch.setattr(
+        runner, "_train_one",
+        lambda c, seed, path, **kwargs: calls.append((seed, path, kwargs)) or {"seed": seed},
+    )
+    assert run_seed(BASE_CONFIG, tmp_path, 44) == {"seed": 44}
+    assert calls == [(44, tmp_path / "shaped-44", {"postgres": True, "reward_mode": "shaped"})]
+    with pytest.raises(ConvergenceError, match="outside"):
+        run_seed(BASE_CONFIG, tmp_path, 1001)
+    with pytest.raises(ConvergenceError, match="blocked"):
+        run_seed(BASE_CONFIG, tmp_path, 44, sparse=True)
+    assert len(calls) == 1
+
+
+def test_confirmatory_parent_hashes_are_required(monkeypatch):
+    from rlredteam import convergence_runner as runner
+
+    config = load_config(
+        ROOT / "configs/experiments/experiment_01_discovery_corrected_v3.yaml"
+    )
+    protocol = runner.read_json(runner.CONFIRMATORY_PROTOCOL)
+    parent = protocol["parent"]
+    expected = {
+        "registration.json": parent["registration_sha256"],
+        "first_stable.json": parent["first_stable_sha256"],
+        "assessment.json": parent["assessment_sha256"],
+        "reviewed_manifest.json": parent["reviewed_manifest_sha256"],
+        "reviewed_results.json": parent["reviewed_results_sha256"],
+        runner.CONFIRMATORY_PROTOCOL.name: "a" * 64,
+    }
+    monkeypatch.setattr(runner, "sha", lambda path: expected[path.name])
+    inputs = {
+        "topology_hash": parent["topology_hash"],
+        "cve_catalogue_sha256": parent["cve_catalogue_sha256"],
+    }
+    assert runner.confirmatory_protocol(config, inputs)["decoder_version"].endswith("v2")
+    with pytest.raises(ConvergenceError, match="topology or CVE"):
+        runner.confirmatory_protocol(config, inputs | {"topology_hash": "different"})
+    expected["assessment.json"] = "different"
+    with pytest.raises(ConvergenceError, match="parent evidence"):
+        runner.confirmatory_protocol(config, inputs)
 
 
 def test_verifier_does_not_claim_unexecuted_convergence(tmp_path):
