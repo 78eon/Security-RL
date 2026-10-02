@@ -206,14 +206,7 @@ class EnterpriseGraph(QGraphicsView):
                     x, 64 + row * self.ROW_HEIGHT
                 )
 
-        path_edges = {
-            (str(left), str(right))
-            for left, right in zip(
-                [step.get("target") for step in self._visible_trajectory],
-                [step.get("target") for step in self._visible_trajectory[1:]],
-                strict=False,
-            )
-        }
+        visible_evidence = {step.get("step") for step in self._visible_trajectory}
         for edge in self._edges:
             categories = set(map(str, edge.get("categories", ())))
             if self._edge_categories and not self._edge_categories <= categories:
@@ -234,9 +227,9 @@ class EnterpriseGraph(QGraphicsView):
                 QPointF(end.x() - span, end.y()),
                 end,
             )
-            active = (source, target) in path_edges or (
-                source in self.highlighted_entities and target in self.highlighted_entities
-            )
+            # Two observed endpoints do not prove that their connection was
+            # traversed. Highlight edges only with explicit step evidence.
+            active = bool(visible_evidence.intersection(edge.get("evidence_steps", ())))
             item = QGraphicsPathItem(curve)
             item.setPen(
                 QPen(
@@ -263,8 +256,15 @@ class EnterpriseGraph(QGraphicsView):
             position = positions[node_id]
             final = node_id == self.final_entity
             active = node_id in self.highlighted_entities
+            attributes = node.get("attributes") or {}
+            access = str(attributes.get("access", "Unknown"))
+            compromised = access.lower() in {"user", "root", "read", "1", "2"}
             border = theme.ERROR if final else theme.ARM_1 if active else theme.BORDER_SOFT
             fill = theme.TINT_ERROR if final else theme.HEADER if active else theme.SURFACE
+            if compromised and not final:
+                border, fill = theme.OK, theme.TINT_OK
+            elif attributes.get("crown_jewel") is True and not final:
+                border, fill = theme.WARN, theme.TINT_WARN
             card = QGraphicsRectItem(QRectF(0, 0, self.NODE_WIDTH, self.NODE_HEIGHT))
             card.setPos(position)
             card.setBrush(QBrush(QColor(fill)))
@@ -281,7 +281,8 @@ class EnterpriseGraph(QGraphicsView):
             title.setBrush(QBrush(QColor(theme.TEXT)))
             title.setPos(10, 8)
             subtitle = QGraphicsSimpleTextItem(
-                str(node.get("type", "entity")).replace("_", " "), card
+                str(node.get("type", "entity")).replace("_", " ")
+                + (f" · {access}" if compromised else ""), card
             )
             subtitle.setBrush(QBrush(QColor(theme.TEXT_SECONDARY)))
             subtitle.setPos(10, 31)

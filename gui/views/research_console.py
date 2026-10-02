@@ -7,7 +7,7 @@ import os
 from math import ceil
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -18,10 +18,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSlider,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QStatusBar,
     QTableWidget,
@@ -42,6 +44,7 @@ from gui.workers.query import run_async
 
 def label(text: str, name: str = "", *, wrap: bool = False) -> QLabel:
     item = QLabel(text)
+    item.setTextFormat(Qt.TextFormat.PlainText)
     if name:
         item.setObjectName(name)
     item.setWordWrap(wrap)
@@ -265,16 +268,19 @@ class OverviewPage(Page):
 class SimulationPage(Page):
     """Reactive MITRE workspace for one offline enterprise episode."""
 
+    episode_completed = Signal(object)
+
     def __init__(self, backend: BackendPort, notify) -> None:
         super().__init__(
             "EVENT-DRIVEN ATT&CK + ATLAS",
-            "MITRE Navigator workspace",
+            "Offline feasibility demonstration",
             "Replay policy-visible progress through ATT&CK and ATLAS semantics while "
             "keeping Ground Truth isolated from AgentKnowledge.",
         )
         self.backend, self.notify = backend, notify
         self.result = None
         self.events: list[dict] = []
+        self._entries = ()
         self.replay_timer = QTimer(self)
         self.replay_timer.setInterval(480)
         self.replay_timer.timeout.connect(self._advance_replay)
@@ -358,10 +364,35 @@ class SimulationPage(Page):
         self.path_graph = TrajectoryGraph()
         self.truth_graph = EnterpriseGraph()
         self.views.addTab(self.knowledge_graph, "AgentKnowledge")
-        self.views.addTab(self.path_graph, "Attack path")
-        self.views.addTab(self.truth_graph, "Ground Truth · analyst only")
-        views_panel.layout().addWidget(self.views)
+        self.views.addTab(self.path_graph, "Recorded attack trajectory")
+        self.views.addTab(self.truth_graph, "Research True Environment View")
+        self.entities.hide()
+        self.coverage.hide()
+        self.views.currentChanged.connect(lambda index: self.entities.setVisible(index == 2))
+        self.views.currentChanged.connect(lambda index: self.coverage.setVisible(index == 2))
+        self.root.removeWidget(matrix_panel)
+        self.views.addTab(matrix_panel, "MITRE mapping details")
+        from gui.views.workspace import ActionInspector
+
+        split = QSplitter(Qt.Orientation.Horizontal)
+        self.knowledge_details = QPlainTextEdit()
+        self.knowledge_details.setReadOnly(True)
+        self.knowledge_details.setMinimumWidth(190)
+        self.action_inspector = ActionInspector()
+        split.addWidget(self.knowledge_details)
+        split.addWidget(self.views)
+        split.addWidget(self.action_inspector)
+        split.setSizes([220, 620, 310])
+        views_panel.layout().addWidget(split)
         self.root.addWidget(views_panel)
+        self.action_timeline = QTableWidget(0, 4)
+        self.action_timeline.setHorizontalHeaderLabels(["Step", "Action", "Target", "Outcome"])
+        configure_table(self.action_timeline)
+        self.action_timeline.currentCellChanged.connect(
+            lambda row, *_: self.timeline.setValue(row + 1) if row >= 0 else None)
+        self.root.addWidget(self.action_timeline)
+        self.knowledge_graph.node_selected.connect(
+            lambda node: self.knowledge_details.setPlainText(json.dumps(node, indent=2)))
 
         if hasattr(self.backend, "simulation_profiles"):
             self._profiles_task = run_async(
@@ -396,8 +427,15 @@ class SimulationPage(Page):
         )
 
     def _completed(self, result) -> None:
+        from gui.data.workspace import timeline_entries
+
         self.result = result
         self.events = list(result.events)
+        self._entries = timeline_entries(self.events, source="Offline feasibility demonstration")
+        self.action_timeline.blockSignals(True)
+        fill_table(self.action_timeline, [(e.action.step, e.action.name, e.action.target,
+                                          str(e.action.success)) for e in self._entries])
+        self.action_timeline.blockSignals(False)
         self.run_button.setEnabled(True)
         self.replay_button.setEnabled(bool(self.events))
         outcome = "GOAL REACHED" if result.goal_reached else "STEP LIMIT"
@@ -418,6 +456,7 @@ class SimulationPage(Page):
         self.timeline.setValue(len(self.events))
         self._render_step(len(self.events))
         self.notify(f"Completed {result.profile} simulation for seed {result.topology_seed}")
+        self.episode_completed.emit(result)
 
     def graph_replay(self) -> None:
         if not self.events:
@@ -433,12 +472,19 @@ class SimulationPage(Page):
             self.replay_timer.stop()
 
     def _render_step(self, visible_count: int) -> None:
+        from gui.views.workspace import knowledge_text
+
         self.navigator.set_events(self.events, visible_count)
         self.step_label.setText(f"Step {visible_count} / {len(self.events)}")
         if self.result is None:
             return
         visible = self.events[:visible_count]
         current = visible[-1] if visible else None
+        entry = (self._entries[visible_count - 1]
+                 if 0 < visible_count <= len(self._entries) else None)
+        self.action_inspector.set_entry(entry)
+        self.knowledge_details.setPlainText(
+            knowledge_text(entry.after) if entry else "Not yet available: replay has not started")
         if current is None:
             self.rl_context.setText("RL ACTION  —")
             self.simulator_context.setText("SIMULATOR  —")
@@ -465,9 +511,8 @@ class SimulationPage(Page):
         self.mitre_context.setText(f"MITRE  {mapped or 'UNMAPPED · unsupported semantic'}")
 
         knowledge = current.get("knowledge") or {}
-        known_ids = set(knowledge.get("nodes") or [])
-        known_nodes = [node for node in self.result.nodes if node["id"] in known_ids]
-        known_edges = list(knowledge.get("edges") or [])
+        known_nodes = list(entry.after.nodes) if entry else []
+        known_edges = list(entry.after.edges) if entry else []
         self.knowledge_count.update_value(
             str(len(known_nodes)),
             f"{len(knowledge.get('access') or {})} accessed · "
@@ -1441,22 +1486,20 @@ class SystemPage(Page):
 
 class MainWindow(QMainWindow):
     PAGE_DATA = [
-        ("Overview", "Mission control"),
-        ("MITRE Workspace", "MITRE Navigator workspace"),
-        ("Attack Paths", "Attack paths"),
-        ("Path Report", "Explainable attack-path report"),
-        ("Mitigation", "Mitigation counterfactual comparison"),
-        ("Research", "Research studies"),
-        ("Runs", "Stored runs"),
-        ("System", "System status"),
-        ("Frozen Baseline", "Reviewed baseline and supervisor evidence"),
+        ("Home", "Security-RL workspace"),
+        ("Scenario", "Scenario"),
+        ("Simulation", "Simulation and recorded replay"),
+        ("Attack Path", "Recorded attack trajectory"),
+        ("Report", "Simulation outcome and evidence reports"),
+        ("Research", "Research evidence and advanced details"),
     ]
 
     def __init__(self, backend: BackendPort | None = None) -> None:
         super().__init__()
         self.backend = backend or ApplicationBackend()
-        self.setWindowTitle("RLRedTeam Research Console")
+        self.setWindowTitle("Security-RL Attack Simulation Workspace")
         from gui.views.baseline import BaselinePage
+        from gui.views.confirmatory import ConfirmatoryPage
 
         self.resize(1440, 920)
         self.setMinimumSize(1120, 720)
@@ -1471,8 +1514,8 @@ class MainWindow(QMainWindow):
         nav = QVBoxLayout(sidebar)
         nav.setContentsMargins(16, 24, 16, 18)
         nav.setSpacing(4)
-        nav.addWidget(label("RLREDTEAM", "Brand"))
-        nav.addWidget(label("RESEARCH INSTRUMENT", "BrandSub"))
+        nav.addWidget(label("SECURITY-RL", "Brand"))
+        nav.addWidget(label("SIMULATION WORKSPACE", "BrandSub"))
         nav.addSpacing(22)
         self.nav_buttons: list[QPushButton] = []
         for index, (name, _) in enumerate(self.PAGE_DATA):
@@ -1497,7 +1540,7 @@ class MainWindow(QMainWindow):
         self.header = label("Mission control", "PageTitle")
         top.addWidget(self.header)
         top.addStretch()
-        self.refresh_button = button("Refresh backend")
+        self.refresh_button = button("Refresh evidence")
         self.refresh_button.clicked.connect(self.refresh)
         top.addWidget(self.refresh_button)
         self.report_button = button("Copy latest statistics path", "Primary")
@@ -1516,8 +1559,68 @@ class MainWindow(QMainWindow):
             RunsPage(),
             SystemPage(),
             BaselinePage(self.notify),
+            ConfirmatoryPage(),
         ]
-        for page in self.pages:
+        # Keep existing panel instances (and their tested data interfaces), but
+        # expose only the six user-journey sections in primary navigation.
+        from gui.views.workspace import (
+            ComparisonPage,
+            DiagnosticsPage,
+            HomePage,
+            OutcomePage,
+            ReplayWorkspace,
+            ScenarioPage,
+            Section,
+        )
+
+        self.home = HomePage(self.select_page)
+        self.scenario = ScenarioPage()
+        self.replay = ReplayWorkspace("What did the policy do?")
+        self.attack_replay = ReplayWorkspace()
+        self.outcome_report = OutcomePage(self.navigate_to)
+        self.diagnostics = DiagnosticsPage()
+        self.comparison = ComparisonPage()
+        selector = QHBoxLayout()
+        selector.addWidget(label("Recorded evaluation episode", "FieldLabel"))
+        self.episode_selector = QComboBox()
+        self.episode_selector.setMinimumWidth(320)
+        self.episode_selector.currentIndexChanged.connect(self._episode_selected)
+        selector.addWidget(self.episode_selector, 1)
+        self.replay.root.insertLayout(2, selector)
+        self.simulation_section = Section(
+            "Simulation", "Replay frozen policy evidence or use the separate offline demo.",
+            [("Frozen-policy replay", self.replay),
+             ("Offline feasibility demo — not PPO", self.pages[1])],
+        )
+        self.attack_section = Section(
+            "Attack Path", "True topology is research-only (Scenario). Agent Knowledge is recorded "
+            "partial knowledge. Recorded trajectory is not a hidden shortest path.",
+            [("Recorded attack trajectory", self.attack_replay),
+             ("Stored causal paths", self.pages[2])],
+        )
+        self.report_section = Section(
+            "Report", "Episode outcome uses the selected replay. Evidence/causal and mitigation "
+            "tabs have their own selectors. Observed criticality is not mitigation effect.",
+            [("Episode outcome", self.outcome_report),
+             ("Evidence / causal explorer", self.pages[3]),
+             ("Mitigation counterfactual", self.pages[4])],
+        )
+        self.research_section = Section(
+            "Research", "Advanced evidence. Inspection changes no training or scientific records.",
+            [("Convergence / PPO", self.diagnostics), ("Frozen Baseline", self.pages[8]),
+             ("Defect audit / Corrected Confirmatory", self.pages[9]), ("Compare", self.comparison),
+             ("Historical studies", self.pages[5]), ("Stored runs", self.pages[6]),
+             ("Infrastructure", self.pages[7]), ("Advanced overview", self.pages[0])],
+        )
+        self.workspace_pages = [self.home, self.scenario, self.simulation_section,
+                                self.attack_section, self.report_section, self.research_section]
+        self.replay.step_selected.connect(self.scenario.set_knowledge)
+        self.attack_replay.step_selected.connect(self.scenario.set_knowledge)
+        self.pages[1].episode_completed.connect(self._demo_completed)
+        self._episode_generation = 0
+        self._current_source = "frozen"
+        self._workspace_scenario = None
+        for page in self.workspace_pages:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(page)
@@ -1531,6 +1634,14 @@ class MainWindow(QMainWindow):
 
     def refresh(self) -> None:
         # Local evidence remains accessible while PostgreSQL is unavailable/slow.
+        if hasattr(self.backend, "load_workspace"):
+            self._workspace_task = run_async(
+                self.backend.load_workspace, self.apply_workspace, self._workspace_failed)
+        if hasattr(self.backend, "load_confirmatory"):
+            self._confirmatory_task = run_async(
+                self.backend.load_confirmatory, self.apply_confirmatory,
+                self._confirmatory_failed,
+            )
         if hasattr(self.backend, "load_baseline"):
             self._baseline_task = run_async(
                 self.backend.load_baseline, self.apply_baseline,
@@ -1556,16 +1667,106 @@ class MainWindow(QMainWindow):
     def apply_baseline(self, data: BaselineData) -> None:
         self.pages[0].apply_baseline(data)
         self.pages[8].apply_baseline(data)
+        self.home.cards["Frozen baseline status"].update_value(
+            data.state, "Frozen Baseline — separate evidence")
+
+    def apply_confirmatory(self, data) -> None:
+        self.pages[9].apply_confirmatory(data)
+        self.home.cards["Confirmatory study status"].update_value(data.stage, data.status_message)
+
+    def apply_workspace(self, data) -> None:
+        self._workspace_scenario = data.scenario
+        if self._current_source != "demo":
+            self.scenario.set_scenario(data.scenario)
+            self.home.set_scenario(data.scenario)
+        self.diagnostics.set_evidence(data.research)
+        self.comparison.set_options(data.comparisons)
+        previous = self.episode_selector.currentData()
+        self.episode_selector.blockSignals(True)
+        self.episode_selector.clear()
+        for title, arm, seed, episode in data.episode_choices:
+            self.episode_selector.addItem(title, (arm, seed, episode))
+        index = self.episode_selector.findData(previous)
+        self.episode_selector.setCurrentIndex(max(0, index))
+        self.episode_selector.blockSignals(False)
+        if self._current_source != "demo":
+            self._episode_selected(self.episode_selector.currentIndex())
+
+    def _workspace_failed(self, error: str, _detail: str) -> None:
+        from gui.data.models import WorkspaceEvidence
+
+        self.apply_workspace(WorkspaceEvidence(status=f"Not yet available: {error}"))
+
+    def _episode_selected(self, _index) -> None:
+        from gui.data.models import AttackTrajectorySummary
+
+        self._episode_generation += 1
+        generation = self._episode_generation
+        self._current_source = "frozen"
+        choice = self.episode_selector.currentData()
+        self._set_trajectory(AttackTrajectorySummary(status="Loading recorded episode…" if choice
+                                                    else "Not yet available: no recorded episodes"))
+        if self._workspace_scenario is not None:
+            from dataclasses import replace
+
+            scenario = self._workspace_scenario
+            if choice:
+                scenario = replace(scenario, reward_mode=choice[0], training_seed=choice[1])
+            self.scenario.set_scenario(scenario)
+            self.home.set_scenario(scenario)
+        if not choice or not hasattr(self.backend, "load_workspace_episode"):
+            return
+
+        def received(data):
+            if generation == self._episode_generation:
+                self._set_trajectory(data)
+
+        self._episode_task = run_async(
+            lambda: self.backend.load_workspace_episode(*choice), received,
+            lambda error, detail: received(
+                AttackTrajectorySummary(status=f"Not yet available: {error}")),
+        )
+
+    def _set_trajectory(self, data) -> None:
+        self.replay.set_trajectory(data)
+        self.attack_replay.set_trajectory(data)
+        self.outcome_report.set_report(data.report)
+
+    def _demo_completed(self, result) -> None:
+        from gui.data.workspace import simulation_workspace
+
+        self._episode_generation += 1  # discard any older asynchronous replay load
+        self._current_source = "demo"
+        scenario, trace = simulation_workspace(result)
+        self.scenario.set_scenario(scenario)
+        self.home.set_scenario(scenario)
+        self.attack_replay.set_trajectory(trace)
+        self.outcome_report.set_report(trace.report)
+
+    def navigate_to(self, index, action="") -> None:
+        if action == "Compare Experiment":
+            self.research_section.tabs.setCurrentIndex(3)
+        self.select_page(index)
 
     def _baseline_failed(self, error: str, _detail: str) -> None:
         self.apply_baseline(BaselineData(state="INVALID", detail=error))
 
+    def _confirmatory_failed(self, error: str, _detail: str) -> None:
+        from gui.data.models import ConfirmatoryStudySummary
+
+        self.apply_confirmatory(
+            ConfirmatoryStudySummary(status_message=f"Evidence unavailable: {error}")
+        )
+
     def _dashboard_failed(self, error: str, detail: str) -> None:
         self.refresh_button.setEnabled(True)
-        self.statusBar().showMessage(f"Backend unavailable: {error} · {detail}")
+        # Tracebacks belong in diagnostic logs, not the primary workspace footer.
+        self.statusBar().showMessage(
+            f"Backend unavailable: {error}. Local evidence remains accessible.")
 
     def select_page(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
+        self.report_button.setVisible(index == 5)
         self.header.setText(self.PAGE_DATA[index][1])
         scroll = self.stack.currentWidget()
         if isinstance(scroll, QScrollArea):
