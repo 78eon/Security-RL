@@ -1,0 +1,10 @@
+{
+  "schema": "security-rl-discovery-audit-summary-v1",
+  "affected_scan_count": 16598,
+  "affected_reward": 16598,
+  "total_positive_reward": 81866671.368,
+  "affected_share_pct": 0.0203,
+  "tactic_share_pct": 1.334,
+  "interpretation": "The defect affected the training signal, but the directly identified contribution was small in cumulative reward-magnitude terms. This does not establish that the learned policy was unaffected.",
+  "source": "Established audit summary supplied in the frontend requirements, 2026-10-01. This summary is not a fresh database audit."
+}

@@ -15,7 +15,7 @@ from gui.views.main_window import MainWindow
 def main(argv: list[str] | None = None) -> int:
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, True)
     app = QApplication(argv if argv is not None else sys.argv)
-    app.setApplicationName("RLRedTeam Analyst")
+    app.setApplicationName("Security-RL Attack Simulation Workspace")
 
     font = QFont(theme.FONT_SANS)
     font.setPointSizeF(theme.SIZE_BODY * 0.75)  # px -> pt at 96dpi

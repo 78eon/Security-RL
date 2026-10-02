@@ -170,12 +170,14 @@ def mitigation_report() -> dict:
     }
 
 
-def test_all_nine_desktop_workspaces_navigate() -> None:
+def test_six_primary_desktop_workspaces_navigate() -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow(backend=FakeBackend())
 
-    assert window.stack.count() == 9
-    assert len(window.nav_buttons) == 9
+    assert window.stack.count() == 6
+    assert len(window.nav_buttons) == 6
+    assert [button.text() for button in window.nav_buttons] == [
+        "Home", "Scenario", "Simulation", "Attack Path", "Report", "Research"]
     for index, nav_button in enumerate(window.nav_buttons):
         nav_button.click()
         app.processEvents()

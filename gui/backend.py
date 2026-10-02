@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Protocol
 
 from gui.data.baseline import BaselineData, load_baseline
-from gui.data.models import StudySummary, TopologyView
+from gui.data.confirmatory import load_confirmatory
+from gui.data.models import (
+    AttackTrajectorySummary,
+    ConfirmatoryStudySummary,
+    StudySummary,
+    TopologyView,
+    WorkspaceEvidence,
+)
 from gui.data.repository import Repository, RepositoryError
 from gui.data.runs import (
     CATALOGUE_DB,
@@ -110,6 +117,11 @@ class DashboardData:
 
 
 class BackendPort(Protocol):
+    def load_workspace(self) -> WorkspaceEvidence: ...
+    def load_workspace_episode(
+        self, arm: str, seed: int, evaluation_seed: int
+    ) -> AttackTrajectorySummary: ...
+    def load_confirmatory(self) -> ConfirmatoryStudySummary: ...
     def load_baseline(self) -> BaselineData: ...
     def load_dashboard(self) -> DashboardData: ...
     def refresh_paths(self) -> list[dict]: ...
@@ -129,6 +141,21 @@ class ApplicationBackend:
 
     def load_baseline(self) -> BaselineData:
         return load_baseline(REPO_ROOT)
+
+    def load_confirmatory(self) -> ConfirmatoryStudySummary:
+        return load_confirmatory(REPO_ROOT)
+
+    def load_workspace(self) -> WorkspaceEvidence:
+        from gui.data.workspace import load_workspace
+
+        return load_workspace(REPO_ROOT)
+
+    def load_workspace_episode(
+        self, arm: str, seed: int, evaluation_seed: int
+    ) -> AttackTrajectorySummary:
+        from gui.data.workspace import load_workspace_episode
+
+        return load_workspace_episode(REPO_ROOT, arm, seed, evaluation_seed)
 
     def pause_campaign(self, campaign_id: str) -> None:
         raise RuntimeError("no campaign scheduler is configured")
@@ -202,6 +229,14 @@ class ApplicationBackend:
                     "goal_reached": event.goal_reached,
                     "knowledge": {
                         "nodes": sorted(env.knowledge.discovered),
+                        "known_node_types": {
+                            node: kind.value
+                            for node, kind in env.knowledge.known_node_types.items()
+                        },
+                        "known_services": {
+                            node: sorted(values)
+                            for node, values in env.knowledge.known_services.items()
+                        },
                         "edges": [
                             {
                                 "source": source,
