@@ -239,17 +239,17 @@ class HomePage(Page):
         super().__init__(
             "SECURITY-RL",
             "Security-RL Attack Simulation Workspace",
-            "Simulation-only reinforcement-learning red-team research environment",
+            "Simulation-only research environment",
         )
         actions = QHBoxLayout()
         for name, target in (
             ("Open Scenario", 1),
-            ("View Latest Experiment", 4),
-            ("Open Research Evidence", 5),
+            ("Run / View Simulation", 2),
+            ("View Research Evidence", 5),
         ):
             item = button(name, "Primary" if target == 1 else "Action")
-            if target == 4:
-                item.setToolTip("Outcome of the latest selected or loaded episode, not a new run.")
+            if target == 2:
+                item.setToolTip("Open recorded replay or the separate offline demo; does not start a run.")
             item.clicked.connect(lambda checked=False, i=target: navigate(i))
             actions.addWidget(item)
         self.root.addLayout(actions)

@@ -287,6 +287,24 @@ def test_report_excludes_all_non_allowlisted_outcome_metrics(app):
     page.close()
 
 
+def test_home_actions_follow_research_workflow_without_starting_a_run(app):
+    from PySide6.QtWidgets import QPushButton
+    from gui.views.workspace import HomePage
+
+    destinations = []
+    page = HomePage(destinations.append)
+    buttons = {button.text(): button for button in page.findChildren(QPushButton)}
+    for name, target in (
+        ("Open Scenario", 1),
+        ("Run / View Simulation", 2),
+        ("View Research Evidence", 5),
+    ):
+        buttons[name].click()
+        assert destinations[-1] == target
+    assert destinations == [1, 2, 5]
+    page.close()
+
+
 def test_research_diagnostics_and_tooltips_render_without_database(app):
     from gui.views.workspace import HELP, DiagnosticsPage
 
